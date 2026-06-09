@@ -1,0 +1,74 @@
+# ============================================================
+#  MiniMax Tool — single-host production stack
+#  Usage:   docker compose up --build
+#  Stop:    docker compose down
+#  Reset:   docker compose down -v   (also wipes uploads + DB)
+# ============================================================
+
+name: minimax
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DB_NAME:-minimax_tool}
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-changeme}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres} -d ${DB_NAME:-minimax_tool}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    # Keep the DB on the internal network only.
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      HOST: 0.0.0.0
+      PORT: 9060
+      DEBUG: "false"
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: ${DB_USER:-postgres}
+      DB_PASSWORD: ${DB_PASSWORD:-changeme}
+      DB_NAME: ${DB_NAME:-minimax_tool}
+      # Supply an explicit master key in production. If omitted, a fresh
+      # `.master_key` file is auto-generated on first run AND LOST when
+      # the container is recreated — at which point all stored API keys
+      # become unreadable. So: either pin a key, or persist a host-
+      # mounted `.master_key` (see the volumes section below).
+      # MASTER_KEY:
+      REQUEST_TIMEOUT: "180"
+      UPLOAD_DIR: /app/uploads
+      STATIC_DIR: /app/static
+    ports:
+      - "${PORT:-9060}:9060"
+    volumes:
+      # Persist generated artifacts.
+      - minimax_uploads:/app/uploads
+      # Persist the master key across container recreations. Mount a host
+      # file (created by the operator — `touch .master_key && chmod 600`).
+      # On first run, the app sees a 0-byte file and writes a fresh key
+      # to it; on subsequent runs the host file is non-empty and the app
+      # reads it. Either way, the key survives `docker compose down` /
+      # `up` cycles.
+      - ./.master_key:/app/.master_key
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:9060/api/health', timeout=2).status == 200 else 1)"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+volumes:
+  postgres_data:
+  minimax_uploads:
