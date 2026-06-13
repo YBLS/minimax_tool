@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Configuration is now YAML, not `.env`.** The app reads its database connection from `config/database.yaml` (mounted at `/app/config/database.yaml` in the container). `.env` and `.env.example` have been removed. The YAML supports `${VAR}` / `${VAR:-default}` references so the password can be supplied at runtime via env var, Docker secret, or any other injection mechanism. `DB_HOST` / `DB_USER` / `DB_PASSWORD` / `DB_NAME` / `DB_PORT` environment variables are no longer used; remove them from any deploy scripts. The default form is to put the password directly in the YAML (the file is gitignored, and GitHub secret scanning is the second line of defence).
+- **Docker stack no longer bundles PostgreSQL.** `docker-compose.yml` ships only the `app` service; the app connects to an external Postgres 16+ configured via `config/database.yaml`. Remove the `postgres` service and `postgres_data` volume when upgrading.
+- **`DB_PASSWORD` is now required at startup.** The backend refuses to boot with an empty password; the default placeholder has been removed from `backend/app/config.py`, `scripts/smoke.py`, and the previous `changeme` defaults in `.env.example` / `docker-compose.yml`.
+- **README** reorganized: front matter is now use-case driven ("I want to animate a still", "I want to A/B compare models", …) instead of a project-layout tour. See `docs/ARCHITECTURE.md` for the file map.
+
+### Added
+- **`config/database.yaml.example`** — template for the new config file. Supports `${DB_PASSWORD}` (env), `${DB_PASSWORD_FILE:-/run/secrets/db_password}` (Docker secret), or a plain string. Add `pyyaml>=6.0.2` to dependencies.
+
 ## [0.1.0] - 2026-06-09
 
 ### Added

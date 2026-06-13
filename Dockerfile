@@ -58,7 +58,8 @@ RUN mkdir -p /app/uploads/image /app/uploads/voice /app/uploads/music /app/uploa
  && chown -R app:app /app
 VOLUME ["/app/uploads"]
 
-# `app/config.py` reads .env from CWD; we set WORKDIR to /app.
+# `app/config.py` reads config/database.yaml from the search-path list
+# (`/app/config/database.yaml` first); we set WORKDIR to /app.
 ENV PATH="/app/.venv/bin:$PATH" \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \

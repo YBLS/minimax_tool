@@ -27,7 +27,7 @@
 │   Core:                                                                │
 │     crypto.py     – Fernet encrypt/decrypt                             │
 │     database.py   – asyncpg pool (JSONB handled by `::jsonb` casts)    │
-│     config.py     – pydantic settings (env + .env)                     │
+│     config.py     – pydantic settings + YAML loader (config/database.yaml) │
 └────────────────────┬───────────────────────────────────────────────────┘
                      │  asyncpg
 ┌────────────────────▼───────────────────────────────────────────────────┐

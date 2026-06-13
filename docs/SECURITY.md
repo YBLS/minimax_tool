@@ -41,22 +41,45 @@ You need **both** of these to recover from a total disk loss:
 
 1. **`.master_key`** — without it, the DB is opaque
 2. **PostgreSQL dump** of the `minimax_tool` database
+3. **`config/database.yaml`** — so a fresh host knows how to reach the DB
+   (only required if the password is baked in; if you use
+   `${DB_PASSWORD}` in the YAML, the env var is part of your secret
+   manager's restore process)
 
-For Docker:
+For Docker (with an external Postgres reachable from the host):
 
 ```bash
-docker compose exec postgres pg_dump -U postgres minimax_tool > backup-$(date +%F).sql
-cp .master_key master-key.bak   # separately stored, not in the same tarball
+# Read host/port/user/db straight from the YAML so the backup
+# script and the app can never disagree about where the DB lives.
+DB_HOST=$(yq '.database.host' config/database.yaml)
+DB_PORT=$(yq '.database.port' config/database.yaml)
+DB_USER=$(yq '.database.user' config/database.yaml)
+DB_NAME=$(yq '.database.name' config/database.yaml)
+
+pg_dump -h "$DB_HOST" -p "${DB_PORT:-5432}" -U "$DB_USER" "$DB_NAME" > backup-$(date +%F).sql
+cp .master_key master-key.bak                        # separate, encrypted location
+cp config/database.yaml config-database.bak          # same or different — your call
 ```
 
-For local dev:
+For local dev (where the YAML's host is `localhost`):
 
 ```bash
 pg_dump -h localhost -U postgres minimax_tool > backup-$(date +%F).sql
 cp .master_key master-key.bak
 ```
 
-Store the two artifacts in **different** places (e.g. DB dump in S3, master key in 1Password). If they're in the same tarball and that tarball leaks, an attacker has everything they need.
+Store the artifacts in **different** places (e.g. DB dump in S3, master
+key in 1Password). If they're in the same tarball and that tarball
+leaks, an attacker has everything they need.
+
+## Configuration secrets
+
+The application reads its database connection from
+`config/database.yaml` (no `.env` is used). To keep the password out
+of the file itself, reference it as a `${DB_PASSWORD}` placeholder and
+export the variable in the shell, or use a Docker secret mounted at
+`/run/secrets/db_password`. The YAML example file shows all three
+patterns.
 
 ## Master-key rotation
 
@@ -75,19 +98,19 @@ The codebase does **not** ship an automated rotation tool — it's a one-off `fo
 Before pushing to a public repo (GitHub, GitLab, Gitea…), verify:
 
 - [ ] `.master_key` is **not** tracked (`git status` shows it ignored)
-- [ ] `.env` is **not** tracked
+- [ ] `.env` is **not** tracked (and `.env.example` is **not** in the repo)
+- [ ] `config/database.yaml` is **not** tracked (only `database.yaml.example` is)
 - [ ] `uploads/` is **not** tracked (or, if you do want examples committed, scrub them first)
 - [ ] No real API keys in any committed file — run `git grep -E 'sk-[a-z0-9]{20,}'` to be sure
-- [ ] No production passwords in any committed file
-- [ ] `.env.example` only has placeholder values, no real secrets
+- [ ] No production passwords in any committed file (the YAML example uses `${DB_PASSWORD}`; grep for plain passwords just in case)
 - [ ] `LICENSE` is in place
 - [ ] README and SECURITY link to each other
 
 You can run most of the above in one go:
 
 ```bash
-# 1. Confirm .master_key, .env, uploads/ are ignored
-git check-ignore -v .master_key .env uploads/ 2>&1
+# 1. Confirm .master_key, .env, config/database.yaml, uploads/ are ignored
+git check-ignore -v .master_key .env config/database.yaml uploads/ 2>&1
 
 # 2. Hunt for accidental MiniMax key prefixes
 git grep -nE 'sk-(cp-)?[a-zA-Z0-9]{20,}' || echo "no plaintext keys found"
