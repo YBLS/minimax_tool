@@ -1,0 +1,63 @@
+# ============================================================
+#  MiniMax Tool — database connection (TEMPLATE)
+# ============================================================
+# Copy this file to `config/database.yaml` and fill in the real
+# values. The simplest form is to paste the password directly:
+#
+#   cp config/database.yaml.example config/database.yaml
+#   $EDITOR config/database.yaml
+#
+# SECURITY: `config/database.yaml` is gitignored, so the password
+# stays out of the repository. The host repo has GitHub secret
+# scanning enabled as a backstop in case of accidental commits.
+#
+# In Docker, the file is mounted at /app/config/database.yaml
+# (read-only). The application reads it on startup and refuses
+# to boot if it's missing or the password is empty.
+#
+# ADVANCED — env-var indirection:
+# If you'd rather keep the password out of the file, the YAML
+# supports `${VAR}` / `${VAR:-default}` placeholders. Two flavors:
+#
+#   1. password: "${DB_PASSWORD}"              # read from the env at startup
+#   2. password: "${DB_PASSWORD_FILE:-/run/secrets/db_password}"
+#                                              # read from a Docker secret file
+#
+# The plain form (just `"your-password-here"`) is fine for a
+# single-host personal tool. Use the indirection forms if you
+# pipe the password in from a secret manager in CI / production.
+# ============================================================
+
+database:
+  # Host where Postgres is reachable from the app container.
+  # - Same-host PG (Docker Desktop on Mac/Win):   host.docker.internal
+  # - Postgres in another container on the same compose network:  the service name
+  # - Managed PG (RDS, Cloud SQL, Supabase, etc.):  the public endpoint
+  host: host.docker.internal
+
+  # Standard Postgres port. 5432 by default.
+  port: 5432
+
+  # The role used to connect. This role must own the application
+  # database (or have CREATE / CONNECT on it).
+  user: postgres
+
+  # PASSWORD. Paste the real password here. Replace this value
+  # before running `docker compose up`. The file is gitignored;
+  # GitHub secret scanning will alert you if it ever lands in git.
+  password: "your-strong-password-here"
+
+  # The application database. Will be created on first start if missing
+  # (requires the connecting role to have CREATE DATABASE rights).
+  name: minimax_tool
+
+  # Set to `true` for managed Postgres that requires TLS (RDS, Cloud SQL,
+  # Heroku Postgres, Supabase, etc.). Adds `?sslmode=require` to the DSN.
+  ssl: false
+
+  # Connection pool tuning. Defaults are sane for a single-user
+  # local tool — bump max_size if you start hitting "pool exhausted".
+  pool:
+    min_size: 1
+    max_size: 10
+    command_timeout: 60

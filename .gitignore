@@ -36,11 +36,16 @@ backend/static/index.html
 .master_key
 .env
 .env.*
-!.env.example
 uploads/*
 !uploads/.gitkeep
 !uploads/**/.gitkeep
 backend/scripts/__pycache__/
+
+# --- Database config (real values only — example file is tracked) ---
+config/database.yaml
+config/database.local.yaml
+!config/database.yaml.example
+!config/.gitkeep
 
 # --- IDE / OS ---
 .idea/

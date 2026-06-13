@@ -10,15 +10,76 @@ Notes:
   - The `finally` block cleans up both the temp config rows AND the
     generation_history rows the generate calls create, so the user's history
     stays clean.
+  - Database connection details (host, port, user, password, name) are read
+    from `config/database.yaml` — the same file the app uses. The script
+    no longer reads any env vars for DB connection. The YAML can still
+    reference `${DB_PASSWORD}` for CI / production use, in which case
+    export `DB_PASSWORD` in the shell before running the smoke test.
 """
 
 import json
+import os
+import re
 import urllib.request
 import urllib.error
 import subprocess
+from pathlib import Path
+
+import yaml
 
 BASE = "http://127.0.0.1:9060"
 FAILS = []
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+
+
+# Same resolver the app uses (kept in sync with backend/app/config.py).
+_ENV_REF_RE = re.compile(r"\$\{([A-Z_][A-Z0-9_]*)(?::-([^}]*))?\}")
+
+
+def _resolve_env_refs(obj):
+    if isinstance(obj, str):
+        def repl(m):
+            var, default = m.group(1), m.group(2)
+            if var in os.environ:
+                return os.environ[var]
+            if default is not None:
+                return default
+            raise ValueError(f"${{{var}}} referenced in YAML but not set in env")
+        return _ENV_REF_RE.sub(repl, obj)
+    if isinstance(obj, dict):
+        return {k: _resolve_env_refs(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_resolve_env_refs(v) for v in obj]
+    return obj
+
+
+def _load_db_config():
+    """Read the active database config (same logic as backend/app/config.py)."""
+    candidates = [
+        Path("/app/config/database.yaml"),
+        PROJECT_ROOT / "config" / "database.yaml",
+        PROJECT_ROOT / "config" / "database.local.yaml",
+    ]
+    for p in candidates:
+        if p and p.is_file():
+            raw = yaml.safe_load(p.read_text(encoding="utf-8")) or {}
+            db = raw.get("database", raw)
+            return _resolve_env_refs(db)
+    raise SystemExit(
+        "Could not find a database config. Create config/database.yaml "
+        "(see config/database.yaml.example) before running smoke."
+    )
+
+
+    # Refuse to start without a usable database config — we need it to talk
+    # to Postgres for the history-scrub step below.
+    DB = _load_db_config()
+    if not DB.get("password"):
+        raise SystemExit(
+            "database.yaml has an empty password. Edit config/database.yaml "
+            "and set a real value (or use ${DB_PASSWORD} in the YAML and "
+            "export DB_PASSWORD in the shell)."
+        )
 
 
 def check(label, ok, detail=""):
@@ -51,18 +112,56 @@ def req(path, method, body=None):
 
 def _scrub_smoke_history():
     """Delete any history rows the generate calls in this test created."""
-    try:
-        r = subprocess.run(
-            ["uv", "run", "python", "-c", '''
-import asyncio, asyncpg
+    # The inner script reads the YAML itself. We forward the env so the
+    # YAML's ${DB_PASSWORD} reference (if any) can resolve. We never
+    # bake a password into the script.
+    cleanup_script = '''
+import asyncio, asyncpg, os, re
+from pathlib import Path
+import yaml
+
+_ENV_REF_RE = re.compile(r"\\$\\{([A-Z_][A-Z0-9_]*)(?::-([^}]*))?\\}")
+def _resolve(obj):
+    if isinstance(obj, str):
+        def repl(m):
+            var, default = m.group(1), m.group(2)
+            return os.environ.get(var, default if default is not None else "")
+        return _ENV_REF_RE.sub(repl, obj)
+    if isinstance(obj, dict):
+        return {k: _resolve(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_resolve(v) for v in obj]
+    return obj
+
+candidates = [
+    Path("/app/config/database.yaml"),
+    Path("config/database.yaml"),
+    Path("config/database.local.yaml"),
+]
+db = None
+for p in candidates:
+    if p and p.is_file():
+        raw = yaml.safe_load(p.read_text(encoding="utf-8")) or {}
+        db = _resolve(raw.get("database", raw))
+        break
+if not db or not db.get("password"):
+    raise SystemExit("could not resolve DB config from YAML in subprocess")
+
 from urllib.parse import quote_plus
+ssl = "?sslmode=require" if db.get("ssl") else ""
+dsn = f"postgresql://{db['user']}:{quote_plus(str(db['password']))}@{db['host']}:{int(db.get('port', 5432))}/{db['name']}{ssl}"
+
 async def t():
-    c = await asyncpg.connect(f"postgresql://postgres:{quote_plus('p@ssw0rd')}@localhost:5432/minimax_tool")
+    c = await asyncpg.connect(dsn)
     await c.execute("DELETE FROM generation_history WHERE module LIKE 'smoke_%'")
     await c.close()
 asyncio.run(t())
-'''],
-            cwd="/Volumes/ExtentData/HelloWorld/MinimaxTool/backend",
+'''
+    try:
+        r = subprocess.run(
+            ["uv", "run", "python", "-c", cleanup_script],
+            cwd=str(PROJECT_ROOT),
+            env={**os.environ},
             capture_output=True, text=True, timeout=30,
         )
         if r.returncode != 0:

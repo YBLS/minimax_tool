@@ -1,46 +1,43 @@
 # ============================================================
 #  MiniMax Tool — single-host production stack
-#  Usage:   docker compose up --build
+#
+#  All configuration comes from `config/database.yaml` (mounted into
+#  the container at /app/config/database.yaml). The .env file is no
+#  longer used. See docs/DEPLOY.md for the full setup walkthrough.
+#
+#  Required host files before `docker compose up`:
+#    - config/database.yaml    (DB connection; gitignored)
+#    - .master_key             (Fernet key; generated on first run)
+#
+#  Usage:   cp config/database.yaml.example config/database.yaml
+#           $EDITOR config/database.yaml   # set host + password
+#           touch .master_key && chmod 600 .master_key
+#           docker compose up --build
 #  Stop:    docker compose down
-#  Reset:   docker compose down -v   (also wipes uploads + DB)
+#  Reset:   docker compose down -v   (wipes uploads; external DB untouched)
 # ============================================================
 
 name: minimax
 
 services:
-  postgres:
-    image: postgres:16-alpine
-    restart: unless-stopped
-    environment:
-      POSTGRES_DB: ${DB_NAME:-minimax_tool}
-      POSTGRES_USER: ${DB_USER:-postgres}
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-changeme}
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres} -d ${DB_NAME:-minimax_tool}"]
-      interval: 5s
-      timeout: 5s
-      retries: 10
-    # Keep the DB on the internal network only.
-
   app:
     build:
       context: .
       dockerfile: Dockerfile
     restart: unless-stopped
-    depends_on:
-      postgres:
-        condition: service_healthy
+    # No DB healthcheck gate — the app talks to an external Postgres, so the
+    # operator is responsible for making sure that DB is up before `up`.
     environment:
       HOST: 0.0.0.0
       PORT: 9060
       DEBUG: "false"
-      DB_HOST: postgres
-      DB_PORT: 5432
-      DB_USER: ${DB_USER:-postgres}
-      DB_PASSWORD: ${DB_PASSWORD:-changeme}
-      DB_NAME: ${DB_NAME:-minimax_tool}
+      # The database config (host, port, user, password, name, pool, ssl)
+      # is read from /app/config/database.yaml — mounted read-only from
+      # the host below. No env-var indirection; the YAML is the single
+      # source of truth and the password lives in the file itself.
+      # The application refuses to start if the YAML is missing or the
+      # password resolves to an empty string.
+      #
       # Supply an explicit master key in production. If omitted, a fresh
       # `.master_key` file is auto-generated on first run AND LOST when
       # the container is recreated — at which point all stored API keys
@@ -55,6 +52,11 @@ services:
     volumes:
       # Persist generated artifacts.
       - minimax_uploads:/app/uploads
+      # Mount the database config read-only. The path inside the
+      # container matches DB_CONFIG_FILE above. Compose fails fast
+      # at startup if the file is missing (because the bind mount
+      # references a file that doesn't exist on the host).
+      - ./config/database.yaml:/app/config/database.yaml:ro
       # Persist the master key across container recreations. Mount a host
       # file (created by the operator — `touch .master_key && chmod 600`).
       # On first run, the app sees a 0-byte file and writes a fresh key
@@ -70,5 +72,4 @@ services:
       start_period: 15s
 
 volumes:
-  postgres_data:
   minimax_uploads:
