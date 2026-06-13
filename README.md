@@ -1,200 +1,137 @@
 # MiniMax Tool
 
-> Local web UI for the MiniMax AI platform — image / voice / music / video generation, with **all API keys encrypted at rest** in a self-hosted PostgreSQL.
+> A local web UI for the [MiniMax](https://platform.minimaxi.com) AI platform — **image / voice / music / video** generation in one place, with your **API keys encrypted at rest**.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python 3.13](https://img.shields.io/badge/python-3.13-blue.svg)](https://www.python.org/downloads/)
 [![React 18](https://img.shields.io/badge/react-18-61dafb.svg)](https://react.dev)
 [![FastAPI](https://img.shields.io/badge/fastapi-0.115-009688.svg)](https://fastapi.tiangolo.com)
 
-## Why this exists
+Calling MiniMax's generation APIs from a terminal works, but the moment you want to A/B compare, remember which model worked, replay a call with a small tweak, or keep your keys out of shell history — you end up writing a tiny UI. That's what this is. One port, one database, and your keys are Fernet-encrypted before they touch disk.
 
-Calling MiniMax's generation APIs from a terminal works, but the moment you want to:
+---
 
-- A/B compare **image / voice / music / video** side-by-side
-- Remember **which model / endpoint** worked best for what
-- Re-run the same call with a small tweak
-- Keep your **API keys out of source control and shell history**
+## 1. Install
 
-…you start writing a tiny UI. That's what this is. One binary, one port, one database, and your keys are encrypted with Fernet before they ever touch disk.
-
-## Features
-
-| Module | Sub-modes | Models (current flagships) |
-|--------|-----------|------------------------------|
-| **Image** | — | `image-01` |
-| **Voice** (TTS) | — | `speech-2.6-turbo` (32 languages, 100+ presets) |
-| **Music** | — | `music-2.0` (up to 4 min) |
-| **Video** | **T2V** / **I2V** / **FL2V** | `MiniMax-Hailuo-2.3`, `MiniMax-Hailuo-02`, plus legacy `T2V-01*` / `I2V-01*` |
-
-- 🖼 Generate, preview, and download every artifact (saved under `uploads/<module>/YYYY/MM/DD/`)
-- 🔐 **API keys encrypted** with Fernet (AES-128-CBC + HMAC-SHA256) before storage
-- 🧠 **Per-call parameter tables** (aspect ratio, voice, duration, resolution, first/last frame image, etc.)
-- 📜 **Generation history** with full request/response payloads (truncated for legibility)
-- 🔁 **Reset to config defaults** with one click
-- 🩺 **Health check** + smoke test (`scripts/smoke.py`) covers SPA, API contracts, write paths
-- 🐳 **One-command deploy** with `docker compose up`
-
-## Quick start (Docker, recommended)
+**Prerequisites**: Docker Engine 20.10+ (with the `docker compose` v2 plugin), and a PostgreSQL 16+ instance you can reach.
 
 ```bash
-git clone https://github.com/<your-org>/minimax-tool.git
+git clone <repo-url> minimax-tool
 cd minimax-tool
-
-# Optional: edit the .env to set DB password / ports
-cp .env.example .env
-
-docker compose up --build
+cp config/database.yaml.example config/database.yaml
+$EDITOR config/database.yaml     # set host / port / user / password / name
+touch .master_key && chmod 600 .master_key
+docker compose up -d --build
 ```
 
-Open <http://localhost:9060>. The app auto-creates the database, seeds the 4 default module configs, and serves the SPA.
-
-> Generated files land in a Docker volume mounted at `/app/uploads`. To persist them across `docker compose down`, leave the volume named `minimax_uploads` in `compose.yml` (default).
->
-> After changing frontend code, run `docker compose build --no-cache app && docker compose up -d` so the new bundle is baked into the image. `docker compose restart` alone is not enough.
-
-## Quick start (local, without Docker)
-
-Requires: **Python 3.13+**, **Node 20+**, **PostgreSQL 16+** running on `localhost:5432`.
+Verify it's up:
 
 ```bash
-# 1. Backend
-cd backend
-uv sync                     # or: pip install -e .
-cp ../.env.example ../.env  # adjust DB_* if needed
-uv run python scripts/init_db.py
-uv run uvicorn app.main:app --host 0.0.0.0 --port 9060
-
-# 2. Frontend (separate terminal)
-cd ../frontend
-npm install
-npm run build               # or: npm run dev for hot-reload on :5173
-# build output → ../backend/static/  (served by FastAPI on :9060)
+docker compose ps                  # STATUS = healthy
+curl http://localhost:9060/api/health
+# → {"status":"ok","db":true,"version":"0.1.0"}
 ```
 
-Then open <http://localhost:9060>.
+Open <http://localhost:9060>. The app auto-creates the database and seeds 4 default module configs on first run.
 
-## First-time configuration
+**No Docker?** Run the backend and frontend separately — see [docs/DEPLOY.md § Local development](docs/DEPLOY.md#local-development).
 
-1. Open <http://localhost:9060> → left sidebar → **Config Center**
-2. Pick a module → **Edit** → paste your MiniMax API key
-3. Click **Save**. The key is encrypted immediately; the textarea clears.
-4. Switch to **Studio** in the sidebar → pick **Image / Voice / Music / Video** → hit **Generate**.
+**Production / hardening / backups / secret rotation** → [docs/DEPLOY.md](docs/DEPLOY.md) and [docs/SECURITY.md](docs/SECURITY.md).
 
-Need a different model than the default? Edit the **Model** field in Common settings, or pick one in the Studio's Parameters pane (only for modules that ship multiple model options).
+---
 
-See **[docs/USAGE.md](docs/USAGE.md)** for module-by-module walkthroughs, including the 3 video sub-modes.
+## 2. Configure
 
-## How secrets are handled
+The first thing to do in the UI is paste your MiniMax API key for each module you want to use. Keys are Fernet-encrypted into the database the moment you save — after that, the plaintext lives only in process memory for the duration of a request.
 
-- API keys live in PostgreSQL as `api_key_encrypted TEXT` (Fernet ciphertext, not plaintext)
-- The **master key** is stored in `.master_key` (mode `0600`) at the project root, **or** supplied via the `MASTER_KEY` env var
-- The first time the backend starts without a master key, it auto-generates one and refuses to log it
-- **If you lose `.master_key`, your stored API keys are unrecoverable** — keep a backup
-- See **[docs/SECURITY.md](docs/SECURITY.md)** for the rotation procedure, the audit checklist before going public, and what to back up.
+1. Open <http://localhost:9060>.
+2. Left sidebar → **Config Center**.
+3. Click **Image** (or Voice / Music / Video) → paste your API key → **Save**.
+4. The status badge turns green. You're ready to generate.
 
-## Project layout
+Other things you can configure in **Config Center**:
 
-```
-minimax-tool/
-├── backend/
-│   ├── app/
-│   │   ├── main.py              # FastAPI factory
-│   │   ├── config.py            # pydantic settings
-│   │   ├── crypto.py            # Fernet encrypt/decrypt
-│   │   ├── database.py          # asyncpg pool
-│   │   ├── models.py            # SQL schema + seed configs
-│   │   ├── schemas.py           # Pydantic request/response models
-│   │   ├── routers/             # FastAPI routers (api endpoints)
-│   │   ├── services/
-│   │   │   └── generator.py     # unified request/response engine
-│   │   └── utils/
-│   │       └── files.py         # upload paths, media URL helpers
-│   ├── scripts/                 # one-shot data fixers
-│   ├── pyproject.toml
-│   └── uv.lock
-├── frontend/
-│   ├── src/
-│   │   ├── api/client.ts
-│   │   ├── pages/               # Studio, ConfigCenter, History, Secrets
-│   │   ├── pages/configForms/   # ImageForm / VoiceForm / MusicForm / VideoForm
-│   │   ├── styles/index.css
-│   │   └── types/index.ts
-│   ├── package.json
-│   └── vite.config.ts
-├── scripts/                     # project-level dev scripts
-│   ├── smoke.py                 # 11-step regression test (host)
-│   ├── smoke_docker.py          # 12-step regression test (in-container)
-│   ├── fix-seeds.sh             # idempotent seed-data updater
-│   ├── start_backend.sh
-│   ├── build_frontend.sh
-│   └── serve.sh
-├── docs/
-│   ├── USAGE.md
-│   ├── ARCHITECTURE.md
-│   ├── DEPLOY.md
-│   └── SECURITY.md
-├── uploads/                     # generated artifacts (gitignored)
-├── docker-compose.yml
-├── Dockerfile
-├── .env.example
-├── .gitignore
-├── LICENSE
-├── README.md
-└── CHANGELOG.md
-```
+- **Model** — switch the flagship (e.g. video: `MiniMax-Hailuo-02` → `MiniMax-Hailuo-2.3-Fast`).
+- **Base URL** — point at a proxy or alternate region.
+- **Request template** — JSON body sent to MiniMax (placeholders like `{{prompt}}`, `{{api_key}}`).
+- **Default params** — values the form pre-fills on first load.
+- **Add / duplicate / delete** a module config — useful for A/B comparing models side by side.
+- **Test** button — sends a no-op request to verify connectivity without burning quota.
 
-## API surface
+Reusable values shared across templates (e.g. a `WEBHOOK_SIGNING_KEY`) live in **Secrets** (sidebar) and are referenced as `{{secrets.NAME}}` in any template body.
 
-| Method | Path | Purpose |
-|--------|------|---------|
-| `GET` | `/api/health` | Liveness + DB connectivity |
-| `GET` | `/api/configs` | List all module configs |
-| `GET` | `/api/configs/{module}` | Fetch one |
-| `POST` | `/api/configs` | Create a new config |
-| `PUT` | `/api/configs/{id}` | Update (passing `api_key: ""` clears it) |
-| `DELETE` | `/api/configs/{id}` | Delete |
-| `POST` | `/api/configs/{id}/test` | Test connectivity (no real generation) |
-| `POST` | `/api/generate/{module}` | Generate (returns a result + persisted history row) |
-| `GET` | `/api/history` | Recent generations (newest first) |
-| `GET` | `/api/history/{id}` | Full detail (request/response payloads) |
-| `DELETE` | `/api/history/{id}` | Remove a row |
-| `GET` | `/api/secrets` | List app-level secrets (metadata only) |
-| `PUT` | `/api/secrets/{name}` | Upsert a secret |
-| `DELETE` | `/api/secrets/{name}` | Remove |
-| `GET` | `/api/media/{path:path}` | Serve generated files (under `uploads/`) |
+---
 
-OpenAPI docs at <http://localhost:9060/docs>.
+## 3. Use
 
-## Testing
+> Pick the scenario that sounds like you. Each one is end-to-end: open the app, do the steps, see the result.
 
-```bash
-# 11-step smoke test (covers SPA, contracts, write paths)
-uv run python scripts/smoke.py
+### 🎨 Generate images
 
-# 12-step in-container smoke (use after `docker compose up -d`)
-docker compose exec -T app sh -c 'cat > /tmp/s.py' < scripts/smoke_docker.py
-docker compose exec -T app python /tmp/s.py
+1. **Studio → Image**.
+2. Type a prompt (e.g. *"a tabby cat wearing a spacesuit, retro sci-fi poster style"*).
+3. Pick **Aspect ratio** (1:1, 16:9, 9:16, …) and **Number of images** (1-4).
+4. Hit **Generate Image** — variants appear as tiles.
+5. Click a tile for full-size, download from the same panel. Files are also saved under `uploads/image/YYYY/MM/DD/`.
 
-# Pure-template render check for the 4 video sub-modes
-uv run python backend/scripts/check_video_template_render.py
-```
+Want to iterate? Tweak the prompt, re-run, then open **History** (sidebar) — every previous call is there with its full request/response payload, and you can **replay** any one with one click.
 
-## Troubleshooting
+### 🗣 Generate voice
 
-| Symptom | Fix |
-|---------|-----|
-| `API key is empty` error | Open **Config Center** → paste your key → **Save** |
-| `Upstream rejected request (base_resp.code=2013)` | Check the **Parameters** pane — for music-2.0 `lyrics` is required; for I2V/FL2V the image field is required |
-| Browser shows stale UI | Hard-reload (Cmd/Ctrl+Shift+R). `index.html` is served `Cache-Control: no-store`. |
-| Port 9060 in use | Set `PORT=9061` in `.env` |
-| Lost `.master_key` | All encrypted API keys in DB are unrecoverable. Re-paste them. |
-| `Module 'video' status: usage limit exceeded (3/3 used)` | Wait for the daily reset (MiniMax Token Plan, 00:00 UTC+8) |
-| `osascript`-related errors in `mavis-trash` | Unrelated to MiniMax Tool; only affects our trash-replacement utility |
+1. **Studio → Voice**.
+2. Pick a voice (20+ built-in presets grouped by language; pick **Custom voice_id…** to enter any voice from the MiniMax voices API).
+3. Drag the **Speed / Volume / Pitch** sliders.
+4. Paste your text into **Prompt**.
+5. **Generate Voice** — the result plays inline; download as `.mp3` / `.wav` / `.pcm` / `.flac`.
+
+### 🎵 Generate music
+
+1. **Studio → Music**.
+2. Type a **music prompt** describing style / mood / instruments.
+3. Fill in **Lyrics**. The default `[Instrumental]` is fine for a backing track. For a song, use section markers:
+   ```
+   [Intro]
+   (instrumental)
+
+   [Verse]
+   City lights are calling out my name
+
+   [Chorus]
+   We are the fire, we are the flame
+   ```
+4. **Generate Music** — typical 30-60s for a short song, up to 4 min.
+
+> Got `base_resp.code=2013`? You submitted empty lyrics. Either fill them in or use the `[Instrumental]` placeholder.
+
+### 🎬 Generate video
+
+Video calls are **async** — expect 30-180s per call.
+
+**Three sub-modes**, picked from the **Sub-mode** dropdown at the top of the Video form:
+
+- **T2V** (text-only) — cheapest, just write a prompt. Good for "what would this look like as video?" ideation.
+- **I2V** (image → video) — upload a **First frame image** (URL or drag-drop, ≤ 20 MB, JPG/PNG/WebP), add a motion prompt.
+- **FL2V** (first + last frame) — supply **both** a first and a last frame image, the model interpolates the in-between. Only `MiniMax-Hailuo-02` supports this.
+
+You can embed **camera-control directives** in the prompt in `[…]` brackets, e.g.
+
+> A man picks up a book [推进, 上升], then reads [固定].
+
+Pick **Duration** (6s or 10s) and **Resolution** — the form auto-clamps to what your chosen model supports.
+
+### 🧪 A/B compare models
+
+1. **Config Center** → duplicate the relevant module config → change **Model** → **Save**.
+2. In **Studio**, switch the active config from the **Config** dropdown in the Common settings panel.
+3. Run the same prompt with both configs; compare in **History** side-by-side.
+
+Module-by-module parameter reference → [docs/USAGE.md](docs/USAGE.md).
+
+---
 
 ## Contributing
 
-PRs welcome. See **[CONTRIBUTING.md](CONTRIBUTING.md)** for the local dev loop, the smoke test, and the change-log convention.
+PRs welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for the local dev loop, the smoke test, and the change-log convention.
 
 ## License
 
