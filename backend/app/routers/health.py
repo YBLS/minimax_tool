@@ -24,5 +24,5 @@ async def health() -> dict:
     return {
         "status": "ok" if db_ok else "degraded",
         "db": db_ok,
-        "version": "0.1.0",
+        "version": "0.2.0",
     }

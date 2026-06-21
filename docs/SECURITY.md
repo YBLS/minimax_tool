@@ -13,7 +13,7 @@ We assume the operator:
 We explicitly **do not** protect against:
 
 - a hostile actor with shell access to the host (they can read `.master_key` and the DB)
-- a compromised browser session (no authn/authz on the SPA itself — it's localhost-only)
+- a hostile authenticated user (the built-in Basic auth is single-user, not RBAC)
 - a leaked database dump that also includes `.master_key` (the encryption is moot)
 
 If you need multi-user or remote access, put the app behind an authenticated reverse proxy (e.g. Caddy + oauth2-proxy) **before** exposing port 9060.
@@ -22,10 +22,14 @@ If you need multi-user or remote access, put the app behind an authenticated rev
 
 | Asset | Where | How |
 |-------|-------|-----|
-| MiniMax API keys | `api_configs.api_key_encrypted` | Fernet ciphertext (AES-128-CBC + HMAC-SHA256) |
+| MiniMax API keys | `key_providers.api_key_encrypted` | Fernet ciphertext (AES-128-CBC + HMAC-SHA256) |
 | App-level secrets | `app_secrets.value_encrypted` | Fernet ciphertext |
 | Master key | `.master_key` (mode `0600`) at the project root | URL-safe base64-encoded 32-byte key |
 | Master key (alt) | `MASTER_KEY` env var | Same format; takes precedence over the file |
+
+Successful request history is recursively redacted before it is written to
+PostgreSQL. Authorization, cookies, passwords, tokens and API-key-shaped fields
+are replaced with `[REDACTED]`; startup also cleans rows written by older releases.
 
 ### Master key auto-generation
 

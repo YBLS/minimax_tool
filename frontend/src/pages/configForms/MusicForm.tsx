@@ -5,6 +5,7 @@
 // — submitting an empty string returns base_resp.code=2013. Use the
 // `[Instrumental]` section marker for instrumental tracks.
 
+import { Form, Input, Select, Space, Typography } from 'antd';
 import { AUDIO_FORMATS, BITRATES, SAMPLE_RATES } from './constants';
 
 export interface MusicParams {
@@ -15,9 +16,6 @@ export interface MusicParams {
 }
 
 export const MUSIC_DEFAULTS: MusicParams = {
-  // Pre-fill with the [Instrumental] marker so music-2.0 accepts the request
-  // out of the box. The user can replace this with real lyrics or section
-  // markers ([Verse] / [Chorus] / etc.) — anything non-empty works.
   lyrics: '[Instrumental]',
   sample_rate: 32000,
   bitrate: 128000,
@@ -46,41 +44,55 @@ export function MusicParamsForm({ value, onChange }: Props) {
   const set = (patch: Partial<MusicParams>) => onChange({ ...value, ...patch });
 
   return (
-    <>
-      <div className="field">
-        <label>Lyrics <span className="muted" style={{ textTransform: 'none' }}>· required by music-2.0</span></label>
-        <textarea
+    <Space direction="vertical" size={12} style={{ width: '100%' }}>
+      <Form.Item
+        label={
+          <Space>
+            Lyrics
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+              · required by music-2.0
+            </Typography.Text>
+          </Space>
+        }
+      >
+        <Input.TextArea
           value={value.lyrics}
           onChange={(e) => set({ lyrics: e.target.value })}
           placeholder="[Verse]&#10;月光洒在旧屋檐&#10;..."
-          rows={6}
+          autoSize={{ minRows: 4, maxRows: 10 }}
         />
-        <div className="hint">
+        <div className="field-hint">
           music-2.0 必须填 lyrics；纯器乐用 <code>[Instrumental]</code> 占位。可用
           <code>[Verse]</code> / <code>[Chorus]</code> 等段落标记。
         </div>
-      </div>
+      </Form.Item>
 
-      <div className="grid-3">
-        <div className="field">
-          <label>Sample rate (Hz)</label>
-          <select value={value.sample_rate} onChange={(e) => set({ sample_rate: Number(e.target.value) })}>
-            {SAMPLE_RATES.map((r) => <option key={r} value={r}>{r}</option>)}
-          </select>
-        </div>
-        <div className="field">
-          <label>Bitrate (bps)</label>
-          <select value={value.bitrate} onChange={(e) => set({ bitrate: Number(e.target.value) })}>
-            {BITRATES.map((r) => <option key={r} value={r}>{r}</option>)}
-          </select>
-        </div>
-        <div className="field">
-          <label>Format</label>
-          <select value={value.format} onChange={(e) => set({ format: e.target.value as any })}>
-            {AUDIO_FORMATS.map((f) => <option key={f} value={f}>{f}</option>)}
-          </select>
-        </div>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
+        <Form.Item label="Sample rate (Hz)">
+          <Select
+            value={value.sample_rate}
+            onChange={(v) => set({ sample_rate: v })}
+            options={SAMPLE_RATES.map((r) => ({ value: r, label: String(r) }))}
+            style={{ width: '100%' }}
+          />
+        </Form.Item>
+        <Form.Item label="Bitrate (bps)">
+          <Select
+            value={value.bitrate}
+            onChange={(v) => set({ bitrate: v })}
+            options={BITRATES.map((r) => ({ value: r, label: String(r) }))}
+            style={{ width: '100%' }}
+          />
+        </Form.Item>
+        <Form.Item label="Format">
+          <Select
+            value={value.format}
+            onChange={(v) => set({ format: v as MusicParams['format'] })}
+            options={AUDIO_FORMATS.map((f) => ({ value: f, label: f }))}
+            style={{ width: '100%' }}
+          />
+        </Form.Item>
       </div>
-    </>
+    </Space>
   );
 }

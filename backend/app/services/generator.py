@@ -34,6 +34,7 @@ import httpx
 from app.config import get_settings
 from app.crypto import decrypt_str
 from app.schemas import OutputFile
+from app.security import redact_sensitive, validate_outbound_url
 from app.utils.files import (
     _safe_filename,
     abs_from_url_path,
@@ -203,20 +204,63 @@ class ResolvedConfig:
 
 
 async def load_config(module: str, config_id: Optional[int] = None) -> ResolvedConfig:
-    from app.database import fetchrow
+    """Resolve a per-module config to a fully-decrypted ResolvedConfig.
+
+    The API key now lives on key_providers (a sibling table), not on
+    api_configs. The linking rules are:
+
+      1. If the config row has key_provider_id set, use that provider.
+      2. Otherwise, count enabled key_providers:
+         * 0  → no key configured anywhere → GenerationError.
+         * 1  → auto-bind to that one (the "single shared key" path).
+         * 2+ → ambiguous; tell the user to pick one explicitly.
+    """
+    from app.database import fetch, fetchrow
     import json
 
     if config_id is not None:
         row = await fetchrow(
-            "SELECT * FROM api_configs WHERE id = $1 AND module = $2", config_id, module
+            "SELECT * FROM api_configs WHERE id = $1 AND module = $2 AND enabled = TRUE", config_id, module
         )
     else:
         row = await fetchrow(
-            "SELECT * FROM api_configs WHERE module = $1 ORDER BY enabled DESC, id ASC LIMIT 1",
+            "SELECT * FROM api_configs WHERE module = $1 AND enabled = TRUE ORDER BY id ASC LIMIT 1",
             module,
         )
     if not row:
         raise GenerationError(f"No config found for module={module}")
+
+    # Pick the provider.
+    provider_id = row.get("key_provider_id")
+    api_key = ""
+    if provider_id is not None:
+        prow = await fetchrow(
+            "SELECT api_key_encrypted FROM key_providers WHERE id = $1", provider_id
+        )
+        if prow and prow["api_key_encrypted"]:
+            api_key = decrypt_str(prow["api_key_encrypted"])
+    else:
+        providers = await fetch(
+            "SELECT id, api_key_encrypted FROM key_providers WHERE enabled = TRUE ORDER BY id ASC"
+        )
+        if not providers:
+            raise GenerationError(
+                "No API key configured. Open Config Center → API Keys and create one."
+            )
+        if len(providers) > 1:
+            names = await fetch(
+                "SELECT id, name FROM key_providers WHERE enabled = TRUE ORDER BY id ASC"
+            )
+            listing = ", ".join(
+                f"{p['name']} (#{p['id']})" for p in names
+            ) if names else f"{len(providers)} providers"
+            raise GenerationError(
+                f"Module '{module}' has no key_provider_id set and there are "
+                f"{len(providers)} enabled providers ({listing}). "
+                f"Edit the config and pick one explicitly."
+            )
+        # Exactly one — auto-bind.
+        api_key = decrypt_str(providers[0]["api_key_encrypted"]) if providers[0]["api_key_encrypted"] else ""
 
     def _coerce(v):
         # Legacy data may have been double-/triple-encoded as JSONB strings
@@ -235,7 +279,7 @@ async def load_config(module: str, config_id: Optional[int] = None) -> ResolvedC
     return ResolvedConfig(
         id=row["id"],
         module=row["module"],
-        api_key=decrypt_str(row["api_key_encrypted"]),
+        api_key=api_key,
         base_url=row["base_url"],
         endpoint_path=row["endpoint_path"],
         model=row["model"],
@@ -332,10 +376,14 @@ async def call_upstream(
     body = request_obj.get("body")
     query = request_obj.get("query")
     url = cfg.base_url.rstrip("/") + "/" + cfg.endpoint_path.lstrip("/")
+    try:
+        await validate_outbound_url(url, allow_private=settings.allow_private_upstreams)
+    except ValueError as exc:
+        raise GenerationError(str(exc)) from exc
 
     timeout = httpx.Timeout(settings.request_timeout, connect=30.0)
 
-    async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
+    async with httpx.AsyncClient(timeout=timeout, follow_redirects=False) as client:
         if method == "GET":
             resp = await client.get(url, headers=headers, params=query)
         elif method == "POST":
@@ -471,7 +519,7 @@ async def run_generation(
             "content_type": headers.get("content-type", ""),
         }
 
-    request_payload = _truncate(request_obj, max_depth=6, max_list=20)
+    request_payload = _truncate(redact_sensitive(request_obj), max_depth=6, max_list=20)
     return files, request_payload, response_payload, duration_ms
 
 
@@ -630,7 +678,7 @@ async def _run_async_task(
         max_depth=6,
         max_list=20,
     )
-    request_payload = _truncate(request_obj, max_depth=6, max_list=20)
+    request_payload = _truncate(redact_sensitive(request_obj), max_depth=6, max_list=20)
     return files, request_payload, response_payload, duration_ms
 
 
@@ -811,38 +859,29 @@ async def _materialize_files(
 # --------------------------- test connectivity ---------------------------
 
 async def test_config(module: str, config_id: int) -> dict[str, Any]:
-    """Make a minimal call to verify auth + endpoint reachability."""
+    """Verify authentication without submitting a billable generation."""
     cfg = await load_config(module, config_id)
     if not cfg.api_key:
         return {"ok": False, "message": "API key is empty"}
-    # Synthesize a no-cost call: send a 1-character prompt; many APIs reject but
-    # the auth/transport error is what we want to detect. We don't persist anything.
-    request_obj = build_request(cfg, "ping", {"n": 1, "duration": 1})
     started = time.perf_counter()
+    url = cfg.base_url.rstrip("/") + "/v1/models"
     try:
-        body_bytes, parsed_json, _ = await call_upstream(cfg, request_obj)
-    except httpx.HTTPStatusError as exc:
-        return {
-            "ok": exc.response.status_code < 500,
-            "message": f"HTTP {exc.response.status_code}: {exc.response.text[:300]}",
-            "http_status": exc.response.status_code,
-            "latency_ms": int((time.perf_counter() - started) * 1000),
-        }
+        await validate_outbound_url(url, allow_private=get_settings().allow_private_upstreams)
+        async with httpx.AsyncClient(timeout=30.0, follow_redirects=False) as client:
+            resp = await client.get(url, headers={"Authorization": f"Bearer {cfg.api_key}"})
     except httpx.HTTPError as exc:
         return {
             "ok": False,
             "message": f"Network error: {exc}",
             "latency_ms": int((time.perf_counter() - started) * 1000),
         }
+    except ValueError as exc:
+        return {"ok": False, "message": str(exc), "latency_ms": 0}
     latency_ms = int((time.perf_counter() - started) * 1000)
-    sample: Any
-    if parsed_json is not None:
-        sample = _truncate(parsed_json, max_depth=4, max_list=5)
-    else:
-        sample = {"_binary": True, "size": len(body_bytes or b"")}
+    ok = resp.status_code == 200
     return {
-        "ok": True,
-        "message": "Reached upstream. (If response looks like an error, the API may reject the 'ping' prompt — paste a real one and try.)",
+        "ok": ok,
+        "message": f"HTTP {resp.status_code}: {'auth accepted' if ok else resp.text[:300]}",
         "latency_ms": latency_ms,
-        "sample_response": sample,
+        "http_status": resp.status_code,
     }

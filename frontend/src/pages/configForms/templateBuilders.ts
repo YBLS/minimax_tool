@@ -97,6 +97,24 @@ export function buildRequestTemplate(module: ModuleName, raw: Record<string, any
         },
       };
     }
+    case 'translate': {
+      // Translate is implemented as a dedicated backend service that talks to
+      // /v1/chat/completions. The request_template below is just a placeholder
+      // shown in the "Advanced" JSON editor (the translate service does not
+      // actually use it); we keep it valid so the form doesn't blow up.
+      return {
+        method: 'POST',
+        headers: { ...DEFAULT_HEADERS },
+        body: {
+          model: '{{model}}',
+          messages: [
+            { role: 'system', content: 'You are a translator.' },
+            { role: 'user', content: '{{prompt}}' },
+          ],
+          temperature: 0.3,
+        },
+      };
+    }
   }
 }
 
@@ -139,6 +157,13 @@ export function defaultResponseParser(module: ModuleName): any {
         default_ext: 'mp4',
         poll_interval: 5.0,
         max_wait: 600.0,
+      };
+    case 'translate':
+      // The translate service does not use the parser. Kept here so the form
+      // renders a valid JSON blob in the "Advanced" section.
+      return {
+        type: 'jsonpath',
+        items_path: '$.choices[0].message.content',
       };
   }
 }

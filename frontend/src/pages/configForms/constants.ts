@@ -12,6 +12,25 @@ export const MODEL_PRESETS: Record<ModuleName, string[]> = {
   music: ['music-1.5', 'music-2.0', 'music-01'],
   // video-01 has been retired; MiniMax-Hailuo-02 is the current model.
   video: ['MiniMax-Hailuo-02', 'video-01'],
+  // Chat models exposed by MiniMax for general text tasks (translation,
+  // summarisation, etc.). Newer flagships first; abab6.5* kept for legacy
+  // accounts that still have access.
+  //   MiniMax-M3          — 2026-06, 1M context, MSA architecture, multimodal
+  //   MiniMax-M2.7-highspeed — M2.7 with higher TPS, same quality
+  //   MiniMax-M2.7        — 2026-04, current open-source flagship
+  //   MiniMax-M2          — 2025-10, prior flagship (still default seed)
+  //   MiniMax-Text-01     — 2025-01, 4M context, MoE
+  //   abab6.5s-chat       — 2024-04, 200k context, legacy
+  //   abab6.5-chat        — 2024-04, 200k context, legacy
+  translate: [
+    'MiniMax-M3',
+    'MiniMax-M2.7-highspeed',
+    'MiniMax-M2.7',
+    'MiniMax-M2',
+    'MiniMax-Text-01',
+    'abab6.5s-chat',
+    'abab6.5-chat',
+  ],
 };
 
 export const ASPECT_RATIOS = ['1:1', '16:9', '4:3', '3:2', '2:3', '3:4', '9:16', '21:9'] as const;
@@ -40,3 +59,33 @@ export const AUDIO_FORMATS = ['mp3', 'pcm', 'wav', 'flac'] as const;
 export const CHANNELS     = [1, 2] as const;
 
 export const VOICE_ID_DEFAULT = 'female-shaonv';
+
+// Language catalogue for the Translate page. `code` is what gets shipped to
+// the backend; `name` is the human-readable name we render in the prompt.
+export interface LanguageDef {
+  code: string;       // 'zh' / 'en' / ...
+  name: string;       // '中文' / 'English' / ...
+  short: string;      // '中' / 'EN' / ...  for the chip-style selectors
+}
+
+export const TRANSLATE_LANGUAGES: LanguageDef[] = [
+  { code: 'zh', name: '中文 (简体)',         short: '中' },
+  { code: 'zh-TW', name: '中文 (繁体)',      short: '繁' },
+  { code: 'en', name: 'English',             short: 'EN' },
+  { code: 'ja', name: '日本語',              short: 'JA' },
+  { code: 'ko', name: '한국어',              short: 'KO' },
+  { code: 'fr', name: 'Français',            short: 'FR' },
+  { code: 'de', name: 'Deutsch',             short: 'DE' },
+  { code: 'es', name: 'Español',             short: 'ES' },
+  { code: 'ru', name: 'Русский',             short: 'RU' },
+  { code: 'pt', name: 'Português',           short: 'PT' },
+  { code: 'it', name: 'Italiano',            short: 'IT' },
+  { code: 'ar', name: 'العربية',             short: 'AR' },
+];
+
+export const TRANSLATE_SOURCE_AUTO: LanguageDef = { code: 'auto', name: 'Auto-detect', short: 'AUTO' };
+
+export function languageName(code: string): string {
+  if (code === 'auto') return TRANSLATE_SOURCE_AUTO.name;
+  return TRANSLATE_LANGUAGES.find((l) => l.code === code)?.name ?? code;
+}

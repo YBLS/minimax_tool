@@ -45,10 +45,18 @@ services:
       # mounted `.master_key` (see the volumes section below).
       # MASTER_KEY:
       REQUEST_TIMEOUT: "180"
+      MAX_DOWNLOAD_BYTES: "104857600"
+      ALLOW_PRIVATE_UPSTREAMS: "false"
+      # Set both in production to enable browser-native HTTP Basic auth.
+      APP_USERNAME: "${APP_USERNAME:-}"
+      APP_PASSWORD: "${APP_PASSWORD:-}"
+      ALLOWED_ORIGINS: "${ALLOWED_ORIGINS:-}"
       UPLOAD_DIR: /app/uploads
       STATIC_DIR: /app/static
     ports:
-      - "${PORT:-9060}:9060"
+      # Localhost-only by default. A TLS reverse proxy on the same host can
+      # still reach it; set BIND_ADDRESS deliberately if remote binding is needed.
+      - "${BIND_ADDRESS:-127.0.0.1}:${PORT:-9060}:9060"
     volumes:
       # Persist generated artifacts.
       - minimax_uploads:/app/uploads

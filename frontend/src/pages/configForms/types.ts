@@ -3,7 +3,10 @@ import type { ModuleName } from '@/types';
 
 export interface CommonFields {
   display_name: string;
-  api_key: string;          // user input; empty = keep current
+  // null  = "auto-bind to the only enabled key provider, or fail loudly"
+  // number= a specific key_provider row to link to
+  key_provider_id: number | null;
+  key_provider_dirty: boolean;     // true when the user explicitly picked/changed
   base_url: string;
   endpoint_path: string;
   model: string;

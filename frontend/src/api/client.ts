@@ -10,8 +10,14 @@ import type {
   HealthInfo,
   HistoryDetail,
   HistoryItem,
+  KeyProvider,
+  KeyProviderCreate,
+  KeyProviderTestResult,
+  KeyProviderUpdate,
   ModuleName,
   SecretMeta,
+  TranslateRequest,
+  TranslateResult,
 } from '@/types';
 
 const BASE = '';  // same origin
@@ -55,12 +61,23 @@ export const api = {
   deleteConfig: (id: number) => http<{ ok: boolean }>('DELETE', `/api/configs/${id}`),
   testConfig: (id: number) => http<ConfigTestResult>('POST', `/api/configs/${id}/test`),
 
+  // key providers (decoupled API key storage)
+  listKeyProviders: () => http<KeyProvider[]>('GET', '/api/key-providers'),
+  getKeyProvider: (id: number) => http<KeyProvider>('GET', `/api/key-providers/${id}`),
+  createKeyProvider: (body: KeyProviderCreate) => http<KeyProvider>('POST', '/api/key-providers', body),
+  updateKeyProvider: (id: number, body: KeyProviderUpdate) => http<KeyProvider>('PUT', `/api/key-providers/${id}`, body),
+  deleteKeyProvider: (id: number) => http<{ ok: boolean }>('DELETE', `/api/key-providers/${id}`),
+  testKeyProvider: (id: number) => http<KeyProviderTestResult>('POST', `/api/key-providers/${id}/test`),
+
   // generate
   generate: (module: ModuleName, body: GenerateRequest) =>
     http<GenerateResult>('POST', `/api/generate/${module}`, body),
 
   // history
-  listHistory: (params: { module?: ModuleName; limit?: number; offset?: number } = {}) => {
+  // `module` is free-form: matches the DB column (VARCHAR(50)) and the
+  // ConfigCreate.module shape. ModuleName alone would reject 'translate',
+  // which the History page uses as a filter chip.
+  listHistory: (params: { module?: ModuleName | (string & {}); limit?: number; offset?: number } = {}) => {
     const q = new URLSearchParams();
     if (params.module) q.set('module', params.module);
     if (params.limit) q.set('limit', String(params.limit));
@@ -76,6 +93,9 @@ export const api = {
   upsertSecret: (name: string, value: string, description: string = '') =>
     http<{ ok: boolean }>('PUT', `/api/secrets/${name}`, { value, description }),
   deleteSecret: (name: string) => http<{ ok: boolean }>('DELETE', `/api/secrets/${name}`),
+
+  // translate
+  translate: (body: TranslateRequest) => http<TranslateResult>('POST', '/api/translate', body),
 };
 
 export { ApiError };

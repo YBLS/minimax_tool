@@ -1,12 +1,80 @@
 // Type definitions mirroring the backend Pydantic models.
 
-export type ModuleName = 'image' | 'voice' | 'music' | 'video';
+export type ModuleName = 'image' | 'voice' | 'music' | 'video' | 'translate';
 export type StatusName = 'pending' | 'running' | 'success' | 'failed';
+
+// --- Translate --------------------------------------------------------------
+
+export interface TranslateRequest {
+  text: string;
+  source: string;     // 'auto' | 'zh' | 'en' | ...
+  target: string;     // 'zh' | 'en' | ...
+  config_id?: number;
+  // Per-call model override. Omit to use the config row's `model`.
+  model?: string;
+}
+
+export interface TranslateResult {
+  translated_text: string;
+  source: string;
+  target: string;
+  model: string;
+  duration_ms: number;
+  // Echoed back so the UI can show "auto-detected: ..." without re-asking
+  detected_source?: string;
+}
+
+// --- Key Providers ----------------------------------------------------------
+//
+// API keys live in their own table. A config references one provider via
+// `key_provider_id`; if it leaves that null, the backend auto-binds to the
+// single enabled provider (the common single-key case).
+
+export interface KeyProvider {
+  id: number;
+  name: string;
+  description: string;
+  has_api_key: boolean;
+  enabled: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface KeyProviderCreate {
+  name: string;
+  description?: string;
+  api_key?: string;
+  enabled?: boolean;
+}
+
+export interface KeyProviderUpdate {
+  name?: string;
+  description?: string;
+  api_key?: string;
+  enabled?: boolean;
+}
+
+export interface KeyProviderTestResult {
+  ok: boolean;
+  message: string;
+  latency_ms: number;
+  http_status?: number;
+  sample_response?: any;
+}
+
+// --- Configs ----------------------------------------------------------------
 
 export interface ApiConfig {
   id: number;
   module: ModuleName;
   display_name: string;
+  // The link to a key provider. Null means "auto-bind" (the backend will
+  // pick the only enabled provider, or error if there are several).
+  key_provider_id: number | null;
+  key_provider_name: string | null;
+  // Resolved from the linked provider — never reflects the (legacy) key
+  // embedded on the config row.
+  has_api_key: boolean;
   base_url: string;
   endpoint_path: string;
   model: string;
@@ -14,7 +82,6 @@ export interface ApiConfig {
   response_parser: Record<string, any>;
   default_params: Record<string, any>;
   enabled: boolean;
-  has_api_key: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -22,7 +89,9 @@ export interface ApiConfig {
 export interface ConfigCreate {
   module: ModuleName;
   display_name: string;
-  api_key?: string;
+  // Optional. Omit (or pass null) to let the backend auto-bind to the only
+  // enabled key provider, or to fail loudly if there are several.
+  key_provider_id?: number | null;
   base_url: string;
   endpoint_path: string;
   model: string;
@@ -34,7 +103,9 @@ export interface ConfigCreate {
 
 export interface ConfigUpdate {
   display_name?: string;
-  api_key?: string;
+  // `key_provider_id` is sent only when the user explicitly picks a
+  // provider in the form. Use `null` to clear the binding.
+  key_provider_id?: number | null;
   base_url?: string;
   endpoint_path?: string;
   model?: string;

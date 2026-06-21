@@ -1,8 +1,8 @@
 // Slim Common+Advanced config form. Module-specific per-call params live in Studio.
-// Keeps default_params as the underlying "defaults" field (still editable via Advanced
-// in the JSON request_template), but doesn't surface a giant per-module form here.
 
 import { useEffect, useState } from 'react';
+import { Button, Form, Input, Space, Typography } from 'antd';
+import { ReloadOutlined } from '@ant-design/icons';
 import { CommonFields } from './CommonFields';
 import { buildRequestTemplate, defaultResponseParser } from './templateBuilders';
 import type { ModuleName } from '@/types';
@@ -11,6 +11,7 @@ export interface FormConfig {
   id: number;
   module: ModuleName;
   display_name: string;
+  key_provider_id: number | null;
   base_url: string;
   endpoint_path: string;
   model: string;
@@ -23,13 +24,16 @@ export interface FormConfig {
 
 export interface FormSubmit {
   display_name: string;
-  api_key?: string;
+  // Only set when the user actually touched the provider select; lets us
+  // distinguish "leave it alone" from "explicitly unbind".
+  key_provider_id?: number | null;
   base_url: string;
   endpoint_path: string;
   model: string;
   enabled: boolean;
   request_template: any;
   response_parser: any;
+  default_params?: Record<string, any>;
 }
 
 export interface ConfigFormProps {
@@ -39,14 +43,13 @@ export interface ConfigFormProps {
 
 export function ConfigForm({ config, onChange }: ConfigFormProps) {
   const [displayName, setDisplayName] = useState(config.display_name);
-  const [apiKey, setApiKey] = useState('');
-  const [apiKeyDirty, setApiKeyDirty] = useState(false);  // user typed OR clicked Clear this session
+  const [keyProviderId, setKeyProviderId] = useState<number | null>(config.key_provider_id);
+  const [keyProviderDirty, setKeyProviderDirty] = useState(false);
   const [baseUrl, setBaseUrl] = useState(config.base_url);
   const [endpointPath, setEndpointPath] = useState(config.endpoint_path);
   const [model, setModel] = useState(config.model);
   const [enabled, setEnabled] = useState(config.enabled);
 
-  // Advanced
   const [templateText, setTemplateText] = useState(() => JSON.stringify(config.request_template, null, 2));
   const [parserText, setParserText] = useState(() => JSON.stringify(config.response_parser, null, 2));
   const [templateDirty, setTemplateDirty] = useState(false);
@@ -68,10 +71,6 @@ export function ConfigForm({ config, onChange }: ConfigFormProps) {
       response_parser = config.response_parser || defaultResponseParser(config.module);
     }
 
-    // Only include api_key in the body if the user actually touched it this
-    // session — otherwise the server keeps the current encrypted value. This
-    // also lets the Clear button (which sets apiKey='') actually clear by
-    // including the field as an empty string in the body.
     const submit: FormSubmit = {
       display_name: displayName,
       base_url: baseUrl,
@@ -81,16 +80,19 @@ export function ConfigForm({ config, onChange }: ConfigFormProps) {
       request_template,
       response_parser,
     };
-    if (apiKeyDirty) {
-      submit.api_key = apiKey;
+    if (keyProviderDirty) {
+      submit.key_provider_id = keyProviderId;
     }
     onChange(submit);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [displayName, apiKey, apiKeyDirty, baseUrl, endpointPath, model, enabled, templateText, parserText, templateDirty, parserDirty]);
+  }, [displayName, keyProviderId, keyProviderDirty, baseUrl, endpointPath, model, enabled, templateText, parserText, templateDirty, parserDirty]);
 
   const onCommonChange = (patch: any) => {
     if ('display_name' in patch) setDisplayName(patch.display_name);
-    if ('api_key'      in patch) { setApiKey(patch.api_key); setApiKeyDirty(true); }
+    if ('key_provider_id'      in patch) {
+      setKeyProviderId(patch.key_provider_id);
+      setKeyProviderDirty(true);
+    }
     if ('base_url'     in patch) setBaseUrl(patch.base_url);
     if ('endpoint_path' in patch) setEndpointPath(patch.endpoint_path);
     if ('model'        in patch) setModel(patch.model);
@@ -108,12 +110,18 @@ export function ConfigForm({ config, onChange }: ConfigFormProps) {
   };
 
   return (
-    <>
-      <h4 className="muted" style={{ margin: '0 0 8px', textTransform: 'uppercase', fontSize: 11, letterSpacing: 1 }}>Common</h4>
+    <Form layout="vertical">
+      <Typography.Text
+        type="secondary"
+        style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: 1, display: 'block', margin: '0 0 8px' }}
+      >
+        Common
+      </Typography.Text>
       <CommonFields
         module={config.module}
         displayName={displayName}
-        apiKey={apiKey}
+        keyProviderId={keyProviderId}
+        keyProviderDirty={keyProviderDirty}
         baseUrl={baseUrl}
         endpointPath={endpointPath}
         model={model}
@@ -122,49 +130,79 @@ export function ConfigForm({ config, onChange }: ConfigFormProps) {
         onChange={onCommonChange}
       />
 
-      <div className="hint" style={{ marginTop: 8, marginBottom: 4, fontSize: 12 }}>
+      <div className="field-hint" style={{ marginTop: 8, marginBottom: 4, fontSize: 12 }}>
         Per-call parameters (aspect ratio, voice, lyrics, etc.) are configured at the
-        generation time in <b>Studio</b> — they don't live here.
-        This config still has a <code>default_params</code> block that Studio pre-fills from.
+        generation time in <b>Studio</b> — they don't live here. This config still has a{' '}
+        <code>default_params</code> block that Studio pre-fills from.
       </div>
 
-      <details style={{ marginTop: 12 }} open={showAdvanced} onToggle={(e) => setShowAdvanced((e.target as HTMLDetailsElement).open)}>
-        <summary style={{ cursor: 'pointer', color: 'var(--text-dim)', fontSize: 12, textTransform: 'uppercase', letterSpacing: 1 }}>
-          Advanced · request template & response parser
-        </summary>
-        <div className="hint" style={{ marginTop: 8, marginBottom: 12 }}>
-          模板会根据该模块的 <code>default_params</code> 自动生成（可在 Studio 临时覆盖）。
-          改这里 = 切换到手动模式。点 <b>Reset to auto</b> 回到自动模式。
-        </div>
+      <div style={{ marginTop: 12 }}>
+        <Button
+          type="link"
+          style={{ padding: 0, height: 'auto' }}
+          onClick={() => setShowAdvanced(!showAdvanced)}
+        >
+          {showAdvanced ? '▾' : '▸'} Advanced · request template & response parser
+        </Button>
+        {showAdvanced && (
+          <div style={{ marginTop: 8 }}>
+            <Typography.Text type="secondary" style={{ fontSize: 12, display: 'block', marginBottom: 8 }}>
+              模板会根据该模块的 <code>default_params</code> 自动生成（可在 Studio 临时覆盖）。
+              改这里 = 切换到手动模式。点 <b>Reset to auto</b> 回到自动模式。
+            </Typography.Text>
 
-        <div className="field">
-          <div className="row">
-            <label style={{ marginBottom: 0 }}>Request template (JSON)</label>
-            <div className="spacer" />
-            <button type="button" className="ghost" onClick={resetTemplate} disabled={!templateDirty}>Reset to auto</button>
-          </div>
-          <textarea
-            value={templateText}
-            onChange={(e) => { setTemplateText(e.target.value); setTemplateDirty(true); }}
-            spellCheck={false}
-            style={{ minHeight: 200, fontFamily: 'ui-monospace, SFMono-Regular, monospace' }}
-          />
-        </div>
+            <Form.Item
+              label={
+                <Space style={{ width: '100%' }}>
+                  <span>Request template (JSON)</span>
+                  <Button
+                    type="link"
+                    size="small"
+                    icon={<ReloadOutlined />}
+                    onClick={resetTemplate}
+                    disabled={!templateDirty}
+                    style={{ marginLeft: 'auto', padding: 0 }}
+                  >
+                    Reset to auto
+                  </Button>
+                </Space>
+              }
+            >
+              <Input.TextArea
+                value={templateText}
+                onChange={(e) => { setTemplateText(e.target.value); setTemplateDirty(true); }}
+                spellCheck={false}
+                className="json-editor"
+              />
+            </Form.Item>
 
-        <div className="field">
-          <div className="row">
-            <label style={{ marginBottom: 0 }}>Response parser (JSON)</label>
-            <div className="spacer" />
-            <button type="button" className="ghost" onClick={resetParser} disabled={!parserDirty}>Reset to default</button>
+            <Form.Item
+              label={
+                <Space style={{ width: '100%' }}>
+                  <span>Response parser (JSON)</span>
+                  <Button
+                    type="link"
+                    size="small"
+                    icon={<ReloadOutlined />}
+                    onClick={resetParser}
+                    disabled={!parserDirty}
+                    style={{ marginLeft: 'auto', padding: 0 }}
+                  >
+                    Reset to default
+                  </Button>
+                </Space>
+              }
+            >
+              <Input.TextArea
+                value={parserText}
+                onChange={(e) => { setParserText(e.target.value); setParserDirty(true); }}
+                spellCheck={false}
+                className="json-editor json-editor-short"
+              />
+            </Form.Item>
           </div>
-          <textarea
-            value={parserText}
-            onChange={(e) => { setParserText(e.target.value); setParserDirty(true); }}
-            spellCheck={false}
-            style={{ minHeight: 120, fontFamily: 'ui-monospace, SFMono-Regular, monospace' }}
-          />
-        </div>
-      </details>
-    </>
+        )}
+      </div>
+    </Form>
   );
 }

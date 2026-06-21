@@ -14,6 +14,7 @@ from typing import Optional
 import httpx
 
 from app.config import get_settings
+from app.security import validate_outbound_url
 
 # Map response-format / file types to extensions + mime
 _MIME_TO_EXT = {
@@ -96,12 +97,18 @@ def build_path(
 
 
 async def download_to_disk(
-    url: str, dest: Path, *, timeout: float = 180.0
+    url: str, dest: Path, *, timeout: float = 180.0, max_bytes: int | None = None
 ) -> tuple[Path, int, str]:
     """Stream `url` to `dest`. Returns (dest, size, content_type)."""
-    async with httpx.AsyncClient(timeout=timeout, follow_redirects=True) as client:
+    settings = get_settings()
+    await validate_outbound_url(url, allow_private=settings.allow_private_upstreams)
+    limit = max_bytes or settings.max_download_bytes
+    async with httpx.AsyncClient(timeout=timeout, follow_redirects=False) as client:
         async with client.stream("GET", url) as resp:
             resp.raise_for_status()
+            declared = int(resp.headers.get("content-length", "0") or 0)
+            if declared > limit:
+                raise ValueError(f"Download exceeds {limit} byte limit")
             content_type = resp.headers.get("content-type", "application/octet-stream")
             size = 0
             dest.parent.mkdir(parents=True, exist_ok=True)
@@ -109,6 +116,8 @@ async def download_to_disk(
                 async for chunk in resp.aiter_bytes(chunk_size=64 * 1024):
                     fh.write(chunk)
                     size += len(chunk)
+                    if size > limit:
+                        raise ValueError(f"Download exceeds {limit} byte limit")
     return dest, size, content_type
 
 

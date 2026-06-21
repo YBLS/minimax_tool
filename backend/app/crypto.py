@@ -55,8 +55,13 @@ def get_fernet() -> Fernet:
 
 
 def encrypt_str(plaintext: str) -> str:
-    """Encrypt a string and return url-safe base64 ciphertext (utf-8 str)."""
-    if plaintext is None:
+    """Encrypt a string and return url-safe base64 ciphertext (utf-8 str).
+
+    Empty / whitespace-only input short-circuits to "" — otherwise Fernet
+    would still produce a valid (but non-empty) ciphertext for the empty
+    string, which trips up `has_api_key` checks downstream.
+    """
+    if not plaintext or not plaintext.strip():
         return ""
     return get_fernet().encrypt(plaintext.encode("utf-8")).decode("utf-8")
 

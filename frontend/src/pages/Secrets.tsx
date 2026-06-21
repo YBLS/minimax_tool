@@ -1,100 +1,262 @@
 import { useEffect, useState } from 'react';
+import {
+  Alert,
+  Button,
+  Card,
+  Empty,
+  Form,
+  Input,
+  Modal,
+  Space,
+  Table,
+  Tag,
+  Typography,
+  Popconfirm,
+  App as AntdApp,
+} from 'antd';
+import type { ColumnsType } from 'antd/es/table';
+import { PlusOutlined, EditOutlined, DeleteOutlined } from '@ant-design/icons';
 import { api } from '@/api/client';
 import type { SecretMeta } from '@/types';
 
+interface FormValues {
+  name: string;
+  value?: string;
+  description?: string;
+}
+
 export default function Secrets() {
+  const { message } = AntdApp.useApp();
   const [secrets, setSecrets] = useState<SecretMeta[]>([]);
   const [editing, setEditing] = useState<SecretMeta | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const refresh = () => api.listSecrets().then(setSecrets).catch((e) => setError(String(e?.message ?? e)));
+  const refresh = () =>
+    api.listSecrets()
+      .then(setSecrets)
+      .catch((e) => setError(String(e?.message ?? e)));
+
   useEffect(() => { refresh(); }, []);
 
-  const onSave = async (name: string, value: string, description: string) => {
-    try { await api.upsertSecret(name, value, description); setEditing(null); await refresh(); }
-    catch (e: any) { setError(e?.message ?? String(e)); }
+  const onSave = async (name: string, value: string | undefined, description: string) => {
+    try {
+      await api.upsertSecret(name, value ?? '', description);
+      setEditing(null);
+      await refresh();
+      message.success('Secret saved');
+    } catch (e: any) {
+      setError(e?.message ?? String(e));
+    }
   };
 
   const onDelete = async (name: string) => {
-    if (!confirm(`Delete secret "${name}"?`)) return;
-    try { await api.deleteSecret(name); await refresh(); } catch (e: any) { setError(e?.message ?? String(e)); }
+    try {
+      await api.deleteSecret(name);
+      await refresh();
+      message.success(`Deleted ${name}`);
+    } catch (e: any) {
+      setError(e?.message ?? String(e));
+    }
   };
+
+  const columns: ColumnsType<SecretMeta> = [
+    {
+      title: 'Name',
+      dataIndex: 'name',
+      render: (v: string) => <code>{v}</code>,
+      width: 220,
+    },
+    {
+      title: 'Description',
+      dataIndex: 'description',
+      render: (v: string) => v || <Typography.Text type="secondary">—</Typography.Text>,
+    },
+    {
+      title: 'Has value',
+      dataIndex: 'has_value',
+      width: 110,
+      render: (v: boolean) =>
+        v ? <Tag color="success">✓ set</Tag> : <Tag>empty</Tag>,
+    },
+    {
+      title: 'Updated',
+      dataIndex: 'updated_at',
+      width: 180,
+      render: (v: string) => <Typography.Text type="secondary">{new Date(v).toLocaleString()}</Typography.Text>,
+    },
+    {
+      title: '',
+      key: 'actions',
+      width: 160,
+      align: 'right',
+      render: (_: any, s: SecretMeta) => (
+        <Space>
+          <Button size="small" icon={<EditOutlined />} onClick={() => setEditing(s)}>
+            Edit
+          </Button>
+          <Popconfirm
+            title={`Delete secret "${s.name}"?`}
+            onConfirm={() => onDelete(s.name)}
+            okText="Delete"
+            okButtonProps={{ danger: true }}
+          >
+            <Button size="small" danger icon={<DeleteOutlined />}>
+              Del
+            </Button>
+          </Popconfirm>
+        </Space>
+      ),
+    },
+  ];
 
   return (
     <>
-      <div className="page-header">
+      <div className="page-title">
         <div>
-          <h2>Secrets</h2>
-          <div className="sub">A small encrypted key/value store for any extra credentials you want to manage (e.g. an upstream proxy key).</div>
+          <h2>🔑 Secrets</h2>
+          <div className="page-sub">
+            A small encrypted key/value store for any extra credentials
+            you want to manage (e.g. an upstream proxy key, a webhook
+            secret, etc.).
+          </div>
         </div>
-        <button className="primary" onClick={() => setEditing({ name: '', description: '', has_value: false, created_at: '', updated_at: '' })}>+ New secret</button>
+        <Button
+          type="primary"
+          icon={<PlusOutlined />}
+          onClick={() =>
+            setEditing({
+              name: '',
+              description: '',
+              has_value: false,
+              created_at: '',
+              updated_at: '',
+            })
+          }
+        >
+          New secret
+        </Button>
       </div>
 
-      {error && <div className="toast error" style={{ position: 'static', marginBottom: 12 }}>{error}</div>}
+      <Alert
+        type="info"
+        showIcon
+        style={{ marginBottom: 16 }}
+        message="Module API keys (image / voice / music / video / translate) live in Config Center → API Keys, not here."
+        description={
+          <>
+            If you previously saved your MiniMax API key on this page,
+            it was automatically promoted into a <b>key provider</b> on
+            the next app start. Look for an entry named after your old
+            secret under <b>Config Center → API Keys</b> — you can rename
+            it, delete it, or add more from there.
+          </>
+        }
+      />
 
-      <div className="card">
-        {secrets.length === 0 ? (
-          <div className="empty">No secrets yet. The 4 module API keys live in the Config Center, not here.</div>
-        ) : (
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <thead>
-              <tr style={{ textAlign: 'left', color: 'var(--text-dim)', fontSize: 12 }}>
-                <th style={{ padding: '6px 8px' }}>Name</th>
-                <th style={{ padding: '6px 8px' }}>Description</th>
-                <th style={{ padding: '6px 8px' }}>Has value</th>
-                <th style={{ padding: '6px 8px' }}>Updated</th>
-                <th style={{ padding: '6px 8px' }}></th>
-              </tr>
-            </thead>
-            <tbody>
-              {secrets.map((s) => (
-                <tr key={s.name} style={{ borderTop: '1px solid var(--border)' }}>
-                  <td style={{ padding: '8px', fontFamily: 'ui-monospace, monospace' }}>{s.name}</td>
-                  <td style={{ padding: '8px' }}>{s.description || <span className="muted">—</span>}</td>
-                  <td style={{ padding: '8px' }}>{s.has_value ? '✓' : '—'}</td>
-                  <td style={{ padding: '8px' }} className="muted">{new Date(s.updated_at).toLocaleString()}</td>
-                  <td style={{ padding: '8px', textAlign: 'right' }}>
-                    <button onClick={() => setEditing(s)}>Edit</button>{' '}
-                    <button className="danger" onClick={() => onDelete(s.name)}>Del</button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </div>
+      {error && (
+        <Alert
+          type="error"
+          showIcon
+          closable
+          message={error}
+          onClose={() => setError(null)}
+          style={{ marginBottom: 16 }}
+        />
+      )}
 
-      {editing && <SecretModal secret={editing} onClose={() => setEditing(null)} onSave={onSave} />}
+      <Card bodyStyle={{ padding: 0 }}>
+        <Table<SecretMeta>
+          rowKey="name"
+          columns={columns}
+          dataSource={secrets}
+          pagination={false}
+          locale={{
+            emptyText: (
+              <Empty
+                description="No secrets yet. The 4 module API keys live in the Config Center, not here."
+                style={{ padding: 32 }}
+              />
+            ),
+          }}
+        />
+      </Card>
+
+      {editing && (
+        <SecretModal
+          secret={editing}
+          onClose={() => setEditing(null)}
+          onSave={onSave}
+        />
+      )}
     </>
   );
 }
 
-function SecretModal({ secret, onClose, onSave }: { secret: SecretMeta; onClose: () => void; onSave: (name: string, value: string, desc: string) => void }) {
+function SecretModal({
+  secret,
+  onClose,
+  onSave,
+}: {
+  secret: SecretMeta;
+  onClose: () => void;
+  onSave: (name: string, value: string | undefined, description: string) => void;
+}) {
   const isNew = !secret.created_at;
-  const [name, setName] = useState(secret.name);
-  const [value, setValue] = useState('');
-  const [description, setDescription] = useState(secret.description);
+  const [form] = Form.useForm<FormValues>();
+
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }} onClick={onClose}>
-      <div className="card" style={{ width: 480 }} onClick={(e) => e.stopPropagation()}>
-        <h3 style={{ marginTop: 0 }}>{isNew ? 'New' : 'Edit'} secret</h3>
-        <div className="field">
-          <label>Name</label>
-          <input value={name} disabled={!isNew} onChange={(e) => setName(e.target.value)} placeholder="e.g. proxy_api_key" />
-        </div>
-        <div className="field">
-          <label>Value {secret.has_value && <span className="muted" style={{ textTransform: 'none' }}>· blank to keep</span>}</label>
-          <input type="password" value={value} onChange={(e) => setValue(e.target.value)} placeholder={secret.has_value ? '••••••••' : 'paste value'} />
-        </div>
-        <div className="field">
-          <label>Description</label>
-          <input value={description} onChange={(e) => setDescription(e.target.value)} />
-        </div>
-        <div className="row">
-          <button className="primary" disabled={!name || (!isNew && !value)} onClick={() => onSave(name, value, description)}>Save</button>
-          <button className="ghost" onClick={onClose}>Cancel</button>
-        </div>
-      </div>
-    </div>
+    <Modal
+      open
+      title={isNew ? 'New secret' : `Edit secret · ${secret.name}`}
+      onCancel={onClose}
+      okText="Save"
+      onOk={async () => {
+        const v = await form.validateFields();
+        onSave(v.name.trim(), v.value, v.description ?? '');
+      }}
+      width={480}
+      destroyOnClose
+    >
+      <Form<FormValues>
+        form={form}
+        layout="vertical"
+        initialValues={{
+          name: secret.name,
+          value: '',
+          description: secret.description,
+        }}
+      >
+        <Form.Item
+          name="name"
+          label="Name"
+          rules={[{ required: true, message: 'Name is required' }]}
+        >
+          <Input disabled={!isNew} placeholder="e.g. proxy_api_key" />
+        </Form.Item>
+        <Form.Item
+          name="value"
+          label={
+            <Space>
+              Value
+              {secret.has_value && (
+                <Typography.Text type="secondary" style={{ fontWeight: 'normal' }}>
+                  · blank to keep
+                </Typography.Text>
+              )}
+            </Space>
+          }
+          rules={isNew ? [{ required: true, message: 'Value is required' }] : []}
+        >
+          <Input.Password
+            placeholder={secret.has_value ? '••••••••' : 'paste value'}
+            autoComplete="off"
+            spellCheck={false}
+          />
+        </Form.Item>
+        <Form.Item name="description" label="Description">
+          <Input />
+        </Form.Item>
+      </Form>
+    </Modal>
   );
 }

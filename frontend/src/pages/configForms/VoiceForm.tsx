@@ -3,6 +3,7 @@
 // audio_setting: { sample_rate, bitrate, format, channel }
 // https://platform.minimaxi.com/document/T2A%20V2
 
+import { Form, Input, Select, Slider, Space, Typography } from 'antd';
 import {
   AUDIO_FORMATS, BITRATES, CHANNELS, SAMPLE_RATES, VOICE_PRESETS, VOICE_ID_DEFAULT,
 } from './constants';
@@ -31,7 +32,6 @@ export const VOICE_DEFAULTS: VoiceParams = {
 
 export function readVoiceParams(d: Record<string, any> = {}): VoiceParams {
   const out: VoiceParams = { ...VOICE_DEFAULTS, ...d };
-  // Coerce types
   out.speed = Number(out.speed) || VOICE_DEFAULTS.speed;
   out.vol   = Number(out.vol)   || VOICE_DEFAULTS.vol;
   out.pitch = Number(out.pitch) || VOICE_DEFAULTS.pitch;
@@ -50,19 +50,30 @@ interface Props {
   onChange: (next: VoiceParams) => void;
 }
 
-function Slider({
+function ParamSlider({
   label, min, max, step, value, onChange, format,
-}: { label: string; min: number; max: number; step: number; value: number; onChange: (n: number) => void; format?: (n: number) => string }) {
+}: {
+  label: string;
+  min: number;
+  max: number;
+  step: number;
+  value: number;
+  onChange: (n: number) => void;
+  format?: (n: number) => string;
+}) {
   return (
-    <div className="field">
-      <label>{label} <span className="muted" style={{ textTransform: 'none' }}>· {format ? format(value) : value}</span></label>
-      <input
-        type="range"
-        min={min} max={max} step={step}
-        value={value}
-        onChange={(e) => onChange(Number(e.target.value))}
-      />
-    </div>
+    <Form.Item
+      label={
+        <Space>
+          {label}
+          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+            · {format ? format(value) : value}
+          </Typography.Text>
+        </Space>
+      }
+    >
+      <Slider min={min} max={max} step={step} value={value} onChange={onChange} />
+    </Form.Item>
   );
 }
 
@@ -71,71 +82,71 @@ export function VoiceParamsForm({ value, onChange }: Props) {
   const knownVoice = VOICE_PRESETS.find((v) => v.id === value.voice_id);
 
   return (
-    <>
-      <div className="field">
-        <label>Voice</label>
-        <select
+    <Space direction="vertical" size={12} style={{ width: '100%' }}>
+      <Form.Item label="Voice">
+        <Select
           value={knownVoice ? value.voice_id : '__custom__'}
-          onChange={(e) => {
-            const v = e.target.value;
-            if (v === '__custom__') {
-              // keep current value, just flip into custom mode by no-op
-              return;
-            }
+          onChange={(v) => {
+            if (v === '__custom__') return;
             set({ voice_id: v });
           }}
-        >
-          {VOICE_PRESETS.map((v) => (
-            <option key={v.id} value={v.id}>{v.label} · {v.lang}</option>
-          ))}
-          <option value="__custom__">Custom voice_id…</option>
-        </select>
+          options={[
+            ...VOICE_PRESETS.map((v) => ({ value: v.id, label: `${v.label} · ${v.lang}` })),
+            { value: '__custom__', label: 'Custom voice_id…' },
+          ]}
+          style={{ width: '100%' }}
+        />
         {knownVoice
-          ? <div className="hint"><b>{knownVoice.label}</b> · {knownVoice.lang}</div>
-          : <div className="field" style={{ marginTop: 8 }}>
-              <input
-                type="text"
-                value={value.voice_id}
-                placeholder="Enter custom voice_id (e.g. male-qn-jingying)"
-                onChange={(e) => set({ voice_id: e.target.value })}
-              />
-              <div className="hint muted">Full list: <code>POST /v1/audio/minimax/voices/list</code></div>
-            </div>
+          ? <div className="field-hint"><b>{knownVoice.label}</b> · {knownVoice.lang}</div>
+          : <Input
+              style={{ marginTop: 8 }}
+              value={value.voice_id}
+              placeholder="Enter custom voice_id (e.g. male-qn-jingying)"
+              onChange={(e) => set({ voice_id: e.target.value })}
+            />
         }
+      </Form.Item>
+
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+        <ParamSlider label="Speed"  min={0.5} max={2.0} step={0.05} value={value.speed} onChange={(n) => set({ speed: n })} format={(n) => `${n.toFixed(2)}×`} />
+        <ParamSlider label="Volume" min={0}   max={10}  step={0.1}  value={value.vol}   onChange={(n) => set({ vol: n })}   format={(n) => n.toFixed(1)} />
+        <ParamSlider label="Pitch"  min={-12} max={12}  step={1}    value={value.pitch} onChange={(n) => set({ pitch: n })} format={(n) => (n > 0 ? `+${n}` : `${n}`) + ' semitone'} />
+        <Form.Item label="Channel">
+          <Select
+            value={value.channel}
+            onChange={(v) => set({ channel: v as 1 | 2 })}
+            options={CHANNELS.map((c) => ({ value: c, label: `${c} (${c === 1 ? 'mono' : 'stereo'})` }))}
+            style={{ width: '100%' }}
+          />
+        </Form.Item>
       </div>
 
-      <div className="grid-2">
-        <Slider label="Speed"   min={0.5} max={2.0}  step={0.05} value={value.speed} onChange={(n) => set({ speed: n })} format={(n) => `${n.toFixed(2)}×`} />
-        <Slider label="Volume"  min={0}   max={10}   step={0.1}  value={value.vol}   onChange={(n) => set({ vol: n })}   format={(n) => n.toFixed(1)} />
-        <Slider label="Pitch"   min={-12} max={12}   step={1}    value={value.pitch} onChange={(n) => set({ pitch: n })} format={(n) => (n > 0 ? `+${n}` : `${n}`) + ' semitone'} />
-        <div className="field">
-          <label>Channel</label>
-          <select value={value.channel} onChange={(e) => set({ channel: Number(e.target.value) as 1 | 2 })}>
-            {CHANNELS.map((c) => <option key={c} value={c}>{c} ({c === 1 ? 'mono' : 'stereo'})</option>)}
-          </select>
-        </div>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
+        <Form.Item label="Sample rate (Hz)">
+          <Select
+            value={value.sample_rate}
+            onChange={(v) => set({ sample_rate: v })}
+            options={SAMPLE_RATES.map((r) => ({ value: r, label: String(r) }))}
+            style={{ width: '100%' }}
+          />
+        </Form.Item>
+        <Form.Item label="Bitrate (bps)">
+          <Select
+            value={value.bitrate}
+            onChange={(v) => set({ bitrate: v })}
+            options={BITRATES.map((r) => ({ value: r, label: String(r) }))}
+            style={{ width: '100%' }}
+          />
+        </Form.Item>
+        <Form.Item label="Format">
+          <Select
+            value={value.format}
+            onChange={(v) => set({ format: v as VoiceParams['format'] })}
+            options={AUDIO_FORMATS.map((f) => ({ value: f, label: f }))}
+            style={{ width: '100%' }}
+          />
+        </Form.Item>
       </div>
-
-      <div className="grid-3">
-        <div className="field">
-          <label>Sample rate (Hz)</label>
-          <select value={value.sample_rate} onChange={(e) => set({ sample_rate: Number(e.target.value) })}>
-            {SAMPLE_RATES.map((r) => <option key={r} value={r}>{r}</option>)}
-          </select>
-        </div>
-        <div className="field">
-          <label>Bitrate (bps)</label>
-          <select value={value.bitrate} onChange={(e) => set({ bitrate: Number(e.target.value) })}>
-            {BITRATES.map((r) => <option key={r} value={r}>{r}</option>)}
-          </select>
-        </div>
-        <div className="field">
-          <label>Format</label>
-          <select value={value.format} onChange={(e) => set({ format: e.target.value as any })}>
-            {AUDIO_FORMATS.map((f) => <option key={f} value={f}>{f}</option>)}
-          </select>
-        </div>
-      </div>
-    </>
+    </Space>
   );
 }

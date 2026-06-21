@@ -1,6 +1,6 @@
 [project]
 name = "minimax-tool-backend"
-version = "0.1.0"
+version = "0.2.0"
 description = "Local web tool to call MiniMax APIs (image / voice / music / video)"
 readme = "../README.md"
 requires-python = ">=3.13"

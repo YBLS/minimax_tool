@@ -9,7 +9,8 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException, Query
 
 from app.database import execute, fetch, fetchrow
-from app.schemas import HistoryDetail, HistoryItem, ModuleName
+from app.schemas import HistoryDetail, HistoryItem
+from app.security import redact_sensitive
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +35,13 @@ def _row_to_item(row, *, detail: bool = False) -> dict:
 
 @router.get("", response_model=list[HistoryItem])
 async def list_history(
-    module: Optional[ModuleName] = None,
+    # Free-form string. The DB column is VARCHAR(50) and the rest of the
+    # system already accepts non-standard module names (translate, smoke_*,
+    # etc. — see ConfigCreate.module for the rationale), so the query param
+    # must match. ModuleName literal would 422 when the UI adds a "Translate"
+    # filter chip even though the table itself never gets a translate row
+    # today (the translator doesn't write to generation_history).
+    module: Optional[str] = None,
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
 ) -> list[HistoryItem]:
@@ -56,7 +63,10 @@ async def get_history(history_id: int) -> HistoryDetail:
     row = await fetchrow("SELECT * FROM generation_history WHERE id = $1", history_id)
     if not row:
         raise HTTPException(404, "Not found")
-    return HistoryDetail(**_row_to_item(row, detail=True))
+    data = _row_to_item(row, detail=True)
+    data["request_payload"] = redact_sensitive(data.get("request_payload", {}))
+    data["response_payload"] = redact_sensitive(data.get("response_payload", {}))
+    return HistoryDetail(**data)
 
 
 @router.delete("/{history_id}")

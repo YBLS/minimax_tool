@@ -28,20 +28,21 @@ class Database:
             conn = await asyncpg.connect(dsn=s.db_dsn)
             await conn.close()
         except asyncpg.InvalidCatalogNameError:
-            logger.info("Database %s not found, creating...", s.db_name)
+            logger.info("Database %s not found, creating...", s.db["name"])
             admin = await asyncpg.connect(dsn=s.db_dsn_no_db)
             try:
-                await admin.execute(f'CREATE DATABASE "{s.db_name}"')
+                await admin.execute(f'CREATE DATABASE "{s.db["name"]}"')
             finally:
                 await admin.close()
             conn = await asyncpg.connect(dsn=s.db_dsn)
             await conn.close()
 
+        pool_cfg = s.db.get("pool") or {}
         cls._pool = await asyncpg.create_pool(
             dsn=s.db_dsn,
-            min_size=1,
-            max_size=10,
-            command_timeout=60,
+            min_size=int(pool_cfg.get("min_size", 1)),
+            max_size=int(pool_cfg.get("max_size", 10)),
+            command_timeout=float(pool_cfg.get("command_timeout", 60)),
             init=_init_connection,
         )
         logger.info("Postgres pool ready (min=1, max=10)")

@@ -156,6 +156,15 @@ class Settings(BaseSettings):
 
     # --- External API defaults (per request, not for auth) ---
     request_timeout: float = Field(default=180.0)
+    max_download_bytes: int = Field(default=100 * 1024 * 1024, ge=1)
+    max_concurrent_generations: int = Field(default=4, ge=1, le=32)
+    allow_private_upstreams: bool = Field(default=False)
+
+    # Optional single-user production authentication. Set both values to
+    # protect the SPA and every API route with browser-native HTTP Basic auth.
+    app_username: str = Field(default="")
+    app_password: str = Field(default="")
+    allowed_origins: str = Field(default="")
 
     # --- Database (loaded from YAML, not from env) ---
     db: dict = Field(default_factory=_load_db_config)
@@ -210,7 +219,13 @@ class Settings(BaseSettings):
                     f"Database config is missing required key `{required}` "
                     f"in config/database.yaml."
                 )
+        if bool(self.app_username) != bool(self.app_password):
+            raise ValueError("APP_USERNAME and APP_PASSWORD must be set together")
         return self
+
+    @property
+    def cors_origins(self) -> list[str]:
+        return [v.strip() for v in self.allowed_origins.split(",") if v.strip()]
 
 
 @lru_cache

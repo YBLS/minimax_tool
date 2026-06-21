@@ -9,14 +9,34 @@
 # ============================================================
 
 # ----- Stage 1: frontend build -----
+# We use yarn (4.x) for the frontend instead of npm. yarn 4 ships with a
+# PnP linker that doesn't need a node_modules tree; vite + esbuild pick up
+# the unplugged native modules automatically. If a yarn.lock is checked in
+# (the common case), the install is reproducible via `--immutable`; the
+# fallback to `yarn install` only runs the first time the lockfile is
+# generated, so subsequent builds keep the strict guarantee.
 FROM node:20-bookworm-slim AS frontend-builder
 
 WORKDIR /work/frontend
-COPY frontend/package.json frontend/package-lock.json* ./
-RUN npm ci --no-audit --no-fund
+COPY frontend/package.json frontend/yarn.lock* ./
+# Yarn 4.x isn't published to the npm registry — it's only distributed via
+# corepack. node:20-bookworm-slim ships an older corepack that doesn't
+# understand modern JS syntax, so we explicitly upgrade corepack first, then
+# `prepare` the exact yarn version we want.
+RUN npm install -g corepack@latest --no-audit --no-fund \
+ && corepack enable \
+ && corepack prepare yarn@4.5.3 --activate
+# Lockfile-aware install: `yarn install --immutable` is strict (errors on
+# drift) and is what we want when yarn.lock is checked in. The fallback
+# only runs on the very first build before a lockfile exists.
+RUN if [ -f yarn.lock ]; then \
+      yarn install --immutable; \
+    else \
+      yarn install; \
+    fi
 
 COPY frontend/ ./
-RUN npm run build   # → ../backend/static/
+RUN yarn build   # → ../backend/static/
 
 # ----- Stage 2: backend deps -----
 FROM python:3.13-slim AS backend-builder

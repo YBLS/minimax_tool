@@ -3,20 +3,25 @@
 from __future__ import annotations
 
 import logging
+import asyncio
 
 from fastapi import APIRouter, HTTPException
 
 from app.database import execute, fetchrow
 from app.schemas import GenerateRequest, GenerateResult, ModuleName
 from app.services.generator import GenerationError, run_generation
+from app.config import get_settings
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/generate", tags=["generate"])
+_generation_slots = asyncio.Semaphore(get_settings().max_concurrent_generations)
 
 
 @router.post("/{module}", response_model=GenerateResult)
 async def generate(module: str, body: GenerateRequest) -> GenerateResult:
+    if module not in {"image", "voice", "music", "video"}:
+        raise HTTPException(404, f"Unsupported generation module: {module}")
     if not body.prompt.strip():
         raise HTTPException(400, "prompt cannot be empty")
 
@@ -35,9 +40,16 @@ async def generate(module: str, body: GenerateRequest) -> GenerateResult:
     history_id = row["id"]
 
     try:
-        files, request_payload, response_payload, duration_ms = await run_generation(
-            module=module, prompt=body.prompt, params=body.params, config_id=body.config_id
+        async with _generation_slots:
+            files, request_payload, response_payload, duration_ms = await run_generation(
+                module=module, prompt=body.prompt, params=body.params, config_id=body.config_id
+            )
+    except asyncio.CancelledError:
+        await execute(
+            "UPDATE generation_history SET status='failed', error_message=$2 WHERE id=$1",
+            history_id, "Request cancelled before completion",
         )
+        raise
     except GenerationError as exc:
         await execute(
             """

@@ -20,10 +20,10 @@
 //
 // Available resolutions depend on the chosen model — see MODEL_RESOLUTIONS.
 //
-// `?`/inconclusive combinations (e.g. Hailuo-02 1080P+10s) are filtered out
-// by excluding the offending option when the related constraint is set.
 
 import { useMemo, useState } from 'react';
+import { Button, Checkbox, Form, Input, Segmented, Select, Space, Typography } from 'antd';
+import { ClearOutlined } from '@ant-design/icons';
 
 // --- Sub-mode / model catalogues (from the official MiniMax docs, 2025-12) ---
 
@@ -35,7 +35,6 @@ export const VIDEO_SUBMODES: { id: VideoSubmode; label: string; emoji: string; t
   { id: 'fl2v', label: 'FL2V', emoji: '🎞', tagline: 'First + Last frame' },
 ];
 
-// (model, submode) → true if the model supports the submode
 const MODEL_SUBMODE_SUPPORT: Record<string, VideoSubmode[]> = {
   'MiniMax-Hailuo-2.3':    ['t2v', 'i2v'],
   'MiniMax-Hailuo-2.3-Fast': ['i2v'],
@@ -53,21 +52,10 @@ export function modelsForSubmode(submode: VideoSubmode): string[] {
   return ALL_VIDEO_MODELS.filter((m) => MODEL_SUBMODE_SUPPORT[m].includes(submode));
 }
 
-// (model, duration) → list of available resolutions.
-// Encodes the official matrix:
-//
-//   | Model                    | 6s 720P | 6s 768P | 6s 1080P | 10s 768P | 10s 1080P |
-//   | MiniMax-Hailuo-2.3       |         |    ✓   |     ✓    |     ✓   |           |
-//   | MiniMax-Hailuo-2.3-Fast  |         |    ✓   |     ✓    |     ✓   |           |
-//   | MiniMax-Hailuo-02 (T2V)  |         |    ✓   |     ✓    |     ✓   |           |
-//   | MiniMax-Hailuo-02 (I2V)  |         |  512P  |  768P    |  1080P  |           |
-//   | MiniMax-Hailuo-02 (FL2V) |         |  768P  |  1080P   |   768P  |           |
-//   | other T2V/I2V            |    ✓   |        |     ✓    |         |           |
 const RES_MATRIX: Record<string, Record<number, string[]>> = {
   'MiniMax-Hailuo-2.3':     { 6:  ['768P', '1080P'], 10: ['768P'] },
   'MiniMax-Hailuo-2.3-Fast':{ 6:  ['768P', '1080P'], 10: ['768P'] },
   'MiniMax-Hailuo-02':      { 6:  ['768P', '1080P'], 10: ['768P'] },
-  // I2V extra: 512P (FL2V doesn't have 512P — handled below)
   '__I2V__MiniMax-Hailuo-02': { 6: ['512P', '768P', '1080P'], 10: ['512P', '768P'] },
   '__FL2V__MiniMax-Hailuo-02': { 6: ['768P', '1080P'], 10: ['768P'] },
   '__other__':              { 6:  ['720P', '1080P'], 10: [] },
@@ -87,7 +75,6 @@ export function resolutionsFor(model: string, submode: VideoSubmode, duration: n
 }
 
 export function durationsFor(model: string, submode: VideoSubmode): number[] {
-  // Most flagships support both 6s and 10s; older T2V/I2V are 6s only.
   if (model in RES_MATRIX || (model === 'MiniMax-Hailuo-02')) {
     return [6, 10];
   }
@@ -99,16 +86,14 @@ export function durationsFor(model: string, submode: VideoSubmode): number[] {
 export interface VideoParams {
   submode: VideoSubmode;
   model: string;
-  // Image fields — only I2V / FL2V use them
-  first_frame_image: string;   // '' = unset
-  first_frame_image_filename: string;  // for display
+  first_frame_image: string;
+  first_frame_image_filename: string;
   last_frame_image: string;
   last_frame_image_filename: string;
-  // Common
   duration: number;
   resolution: string;
   prompt_optimizer: boolean;
-  fast_pretreatment: boolean;  // not for FL2V
+  fast_pretreatment: boolean;
   aigc_watermark: boolean;
   callback_url: string;
 }
@@ -138,8 +123,6 @@ export function readVideoParams(d: Record<string, any> = {}): VideoParams {
 }
 
 export function writeVideoParams(p: VideoParams): Record<string, any> {
-  // Drop empty image fields and empty callback_url so _drop_unset on the
-  // server side actually removes them (T2V shouldn't send first_frame_image).
   const out: Record<string, any> = {
     submode: p.submode,
     model: p.model,
@@ -154,15 +137,12 @@ export function writeVideoParams(p: VideoParams): Record<string, any> {
   if (p.submode === 'fl2v') {
     if (p.last_frame_image) out.last_frame_image = p.last_frame_image;
   }
-  // fast_pretreatment: T2V / I2V only, FL2V ignores
   if (p.submode !== 'fl2v') {
     out.fast_pretreatment = p.fast_pretreatment;
   }
   if (p.callback_url) out.callback_url = p.callback_url;
   return out;
 }
-
-// --- File → base64 data URL helper ---
 
 function readFileAsDataURL(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -172,8 +152,6 @@ function readFileAsDataURL(file: File): Promise<string> {
     fr.readAsDataURL(file);
   });
 }
-
-// --- Form component ---
 
 interface ImageFieldProps {
   label: string;
@@ -189,6 +167,7 @@ function ImageField({ label, value, filename, onChange }: ImageFieldProps) {
   const onFile = async (f: File | undefined) => {
     if (!f) return;
     if (f.size > 20 * 1024 * 1024) {
+      // antd Modal would be nicer but inline keeps the page compact.
       alert(`File too big: ${(f.size / 1024 / 1024).toFixed(1)} MB (limit 20 MB)`);
       return;
     }
@@ -197,26 +176,30 @@ function ImageField({ label, value, filename, onChange }: ImageFieldProps) {
   };
 
   return (
-    <div className="field">
-      <label>{label}</label>
-      <div className="row" style={{ gap: 4, marginBottom: 6 }}>
-        <button
-          type="button"
-          className={'tab-sm' + (mode === 'url' ? ' active' : '')}
+    <Form.Item label={label}>
+      <Space style={{ marginBottom: 6 }}>
+        <Button
+          size="small"
+          type={mode === 'url' ? 'primary' : 'default'}
           onClick={() => { setMode('url'); if (!value || value.startsWith('data:')) onChange('', ''); }}
-        >URL</button>
-        <button
-          type="button"
-          className={'tab-sm' + (mode === 'upload' ? ' active' : '')}
-          onClick={() => { setMode('upload'); }}
-        >Upload</button>
+        >URL</Button>
+        <Button
+          size="small"
+          type={mode === 'upload' ? 'primary' : 'default'}
+          onClick={() => setMode('upload')}
+        >Upload</Button>
         {value && (
-          <button type="button" className="ghost" onClick={() => onChange('', '')} title="Clear">✕</button>
+          <Button
+            size="small"
+            type="text"
+            icon={<ClearOutlined />}
+            onClick={() => onChange('', '')}
+            title="Clear"
+          />
         )}
-      </div>
+      </Space>
       {mode === 'url' && (
-        <input
-          type="text"
+        <Input
           value={value.startsWith('data:') ? '' : value}
           placeholder="https://cdn.example.com/your-image.jpg"
           onChange={(e) => onChange(e.target.value, filename)}
@@ -239,11 +222,11 @@ function ImageField({ label, value, filename, onChange }: ImageFieldProps) {
             onChange={(e) => onFile(e.target.files?.[0] ?? undefined)}
           />
           {filename
-            ? <div className="dropzone-info">📎 {filename} <span className="muted">({Math.round((value.length * 3) / 4 / 1024)} KB base64)</span></div>
-            : <div className="dropzone-info muted">Drop a JPG/PNG/WebP (≤20 MB) or click to pick</div>}
+            ? <div className="dropzone-info">📎 {filename} <Typography.Text type="secondary">({Math.round((value.length * 3) / 4 / 1024)} KB base64)</Typography.Text></div>
+            : <div className="dropzone-info"><Typography.Text type="secondary">Drop a JPG/PNG/WebP (≤20 MB) or click to pick</Typography.Text></div>}
         </div>
       )}
-    </div>
+    </Form.Item>
   );
 }
 
@@ -255,7 +238,6 @@ interface Props {
 export function VideoParamsForm({ value, onChange }: Props) {
   const set = (patch: Partial<VideoParams>) => onChange({ ...value, ...patch });
 
-  // When submode changes: clamp the model to one that supports the new submode
   const onSubmodeChange = (submode: VideoSubmode) => {
     const valid = modelsForSubmode(submode);
     const newModel = valid.includes(value.model) ? value.model : (valid[0] ?? value.model);
@@ -269,7 +251,6 @@ export function VideoParamsForm({ value, onChange }: Props) {
       model: newModel,
       duration: newDuration,
       resolution: newResolution,
-      // Clear image fields that don't apply to the new submode
       first_frame_image: submode === 't2v' ? '' : value.first_frame_image,
       first_frame_image_filename: submode === 't2v' ? '' : value.first_frame_image_filename,
       last_frame_image: submode === 'fl2v' ? value.last_frame_image : '',
@@ -295,45 +276,39 @@ export function VideoParamsForm({ value, onChange }: Props) {
   const availableDurations = useMemo(() => durationsFor(value.model, value.submode), [value.model, value.submode]);
   const availableResolutions = useMemo(
     () => resolutionsFor(value.model, value.submode, value.duration),
-    [value.model, value.submode, value.duration]
+    [value.model, value.submode, value.duration],
   );
 
   return (
-    <>
-      <div className="field">
-        <label>Sub-mode</label>
-        <div className="segmented">
-          {VIDEO_SUBMODES.map((s) => (
-            <button
-              key={s.id}
-              type="button"
-              className={'seg' + (s.id === value.submode ? ' active' : '')}
-              onClick={() => onSubmodeChange(s.id)}
-              title={s.tagline}
-            >
-              {s.emoji} {s.label}
-            </button>
-          ))}
-        </div>
-        <div className="hint">
+    <Space direction="vertical" size={12} style={{ width: '100%' }}>
+      <Form.Item label="Sub-mode">
+        <Segmented
+          value={value.submode}
+          onChange={(v) => onSubmodeChange(v as VideoSubmode)}
+          options={VIDEO_SUBMODES.map((s) => ({ value: s.id, label: `${s.emoji} ${s.label}` }))}
+          block
+        />
+        <div className="field-hint">
           {VIDEO_SUBMODES.find((s) => s.id === value.submode)?.tagline}
         </div>
-      </div>
+      </Form.Item>
 
-      <div className="field">
-        <label>Model</label>
-        <select value={value.model} onChange={(e) => onModelChange(e.target.value)}>
-          {availableModels.map((m) => <option key={m} value={m}>{m}</option>)}
-        </select>
-        <div className="hint muted">
+      <Form.Item label="Model">
+        <Select
+          value={value.model}
+          onChange={onModelChange}
+          options={availableModels.map((m) => ({ value: m, label: m }))}
+          style={{ width: '100%' }}
+        />
+        <div className="field-hint">
           {value.model === 'MiniMax-Hailuo-02' && value.submode === 'fl2v' && 'FL2V only works with Hailuo-02 (no 512P, no fast_pretreatment).'}
           {value.model === 'MiniMax-Hailuo-2.3' && 'Latest flagship (10.28 release, Oct 2025).'}
         </div>
-      </div>
+      </Form.Item>
 
       {(value.submode === 'i2v' || value.submode === 'fl2v') && (
         <ImageField
-          label={value.submode === 'fl2v' ? 'First frame image' : 'First frame image'}
+          label="First frame image"
           value={value.first_frame_image}
           filename={value.first_frame_image_filename}
           onChange={(url, fn) => set({ first_frame_image: url, first_frame_image_filename: fn })}
@@ -348,74 +323,65 @@ export function VideoParamsForm({ value, onChange }: Props) {
         />
       )}
 
-      <div className="grid-2">
-        <div className="field">
-          <label>Duration</label>
-          <select value={value.duration} onChange={(e) => onDurationChange(Number(e.target.value))}>
-            {availableDurations.map((d) => <option key={d} value={d}>{d}s</option>)}
-          </select>
-        </div>
-        <div className="field">
-          <label>Resolution</label>
-          <select value={value.resolution} onChange={(e) => set({ resolution: e.target.value })}>
-            {availableResolutions.map((r) => <option key={r} value={r}>{r}</option>)}
-          </select>
-          <div className="hint muted">
-            {availableResolutions.length === 0 && 'No resolution for this combo.'}
-          </div>
-        </div>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+        <Form.Item label="Duration">
+          <Select
+            value={value.duration}
+            onChange={onDurationChange}
+            options={availableDurations.map((d) => ({ value: d, label: `${d}s` }))}
+            style={{ width: '100%' }}
+          />
+        </Form.Item>
+        <Form.Item label="Resolution">
+          <Select
+            value={value.resolution}
+            onChange={(v) => set({ resolution: v })}
+            options={availableResolutions.map((r) => ({ value: r, label: r }))}
+            style={{ width: '100%' }}
+          />
+          {availableResolutions.length === 0 && (
+            <div className="field-hint">No resolution for this combo.</div>
+          )}
+        </Form.Item>
       </div>
 
-      <div className="grid-2">
-        <div className="field" style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-          <input
-            type="checkbox"
-            id="prompt-optimizer"
-            checked={value.prompt_optimizer}
-            onChange={(e) => set({ prompt_optimizer: e.target.checked })}
-            style={{ width: 'auto' }}
-          />
-          <label htmlFor="prompt-optimizer" style={{ margin: 0, textTransform: 'none', fontSize: 13, color: 'var(--text)' }}>
-            Optimize prompt automatically
-          </label>
-        </div>
+      <Space size={24} wrap>
+        <Checkbox
+          checked={value.prompt_optimizer}
+          onChange={(e) => set({ prompt_optimizer: e.target.checked })}
+        >
+          Optimize prompt automatically
+        </Checkbox>
         {value.submode !== 'fl2v' && (
-          <div className="field" style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-            <input
-              type="checkbox"
-              id="fast-pretreatment"
-              checked={value.fast_pretreatment}
-              onChange={(e) => set({ fast_pretreatment: e.target.checked })}
-              style={{ width: 'auto' }}
-            />
-            <label htmlFor="fast-pretreatment" style={{ margin: 0, textTransform: 'none', fontSize: 13, color: 'var(--text)' }}>
-              Fast pretreatment <span className="muted">(faster optimization)</span>
-            </label>
-          </div>
+          <Checkbox
+            checked={value.fast_pretreatment}
+            onChange={(e) => set({ fast_pretreatment: e.target.checked })}
+          >
+            Fast pretreatment <Typography.Text type="secondary">(faster optimization)</Typography.Text>
+          </Checkbox>
         )}
-        <div className="field" style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-          <input
-            type="checkbox"
-            id="aigc-watermark"
-            checked={value.aigc_watermark}
-            onChange={(e) => set({ aigc_watermark: e.target.checked })}
-            style={{ width: 'auto' }}
-          />
-          <label htmlFor="aigc-watermark" style={{ margin: 0, textTransform: 'none', fontSize: 13, color: 'var(--text)' }}>
-            Add AIGC watermark
-          </label>
-        </div>
-      </div>
+        <Checkbox
+          checked={value.aigc_watermark}
+          onChange={(e) => set({ aigc_watermark: e.target.checked })}
+        >
+          Add AIGC watermark
+        </Checkbox>
+      </Space>
 
-      <div className="field">
-        <label>Callback URL <span className="muted" style={{ textTransform: 'none' }}>· optional, for server-side status push</span></label>
-        <input
-          type="text"
+      <Form.Item
+        label={
+          <Space>
+            Callback URL
+            <Typography.Text type="secondary" style={{ fontSize: 12 }}>· optional, for server-side status push</Typography.Text>
+          </Space>
+        }
+      >
+        <Input
           value={value.callback_url}
           placeholder="https://your-server.com/webhook"
           onChange={(e) => set({ callback_url: e.target.value })}
         />
-      </div>
-    </>
+      </Form.Item>
+    </Space>
   );
 }

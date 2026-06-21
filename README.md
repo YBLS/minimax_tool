@@ -29,7 +29,7 @@ Verify it's up:
 ```bash
 docker compose ps                  # STATUS = healthy
 curl http://localhost:9060/api/health
-# → {"status":"ok","db":true,"version":"0.1.0"}
+# → {"status":"ok","db":true,"version":"0.2.0"}
 ```
 
 Open <http://localhost:9060>. The app auto-creates the database and seeds 4 default module configs on first run.
@@ -55,7 +55,7 @@ Other things you can configure in **Config Center**:
 - **Base URL** — point at a proxy or alternate region.
 - **Request template** — JSON body sent to MiniMax (placeholders like `{{prompt}}`, `{{api_key}}`).
 - **Default params** — values the form pre-fills on first load.
-- **Add / duplicate / delete** a module config — useful for A/B comparing models side by side.
+- Edit each module's model, endpoint, template and defaults from one place.
 - **Test** button — sends a no-op request to verify connectivity without burning quota.
 
 Reusable values shared across templates (e.g. a `WEBHOOK_SIGNING_KEY`) live in **Secrets** (sidebar) and are referenced as `{{secrets.NAME}}` in any template body.
@@ -74,7 +74,7 @@ Reusable values shared across templates (e.g. a `WEBHOOK_SIGNING_KEY`) live in *
 4. Hit **Generate Image** — variants appear as tiles.
 5. Click a tile for full-size, download from the same panel. Files are also saved under `uploads/image/YYYY/MM/DD/`.
 
-Want to iterate? Tweak the prompt, re-run, then open **History** (sidebar) — every previous call is there with its full request/response payload, and you can **replay** any one with one click.
+Want to iterate? Tweak the prompt, re-run, then open **History** (sidebar) to inspect prior calls and their redacted request/response payloads.
 
 ### 🗣 Generate voice
 
@@ -119,11 +119,10 @@ You can embed **camera-control directives** in the prompt in `[…]` brackets, e
 
 Pick **Duration** (6s or 10s) and **Resolution** — the form auto-clamps to what your chosen model supports.
 
-### 🧪 A/B compare models
+### 🧪 Compare model settings
 
-1. **Config Center** → duplicate the relevant module config → change **Model** → **Save**.
-2. In **Studio**, switch the active config from the **Config** dropdown in the Common settings panel.
-3. Run the same prompt with both configs; compare in **History** side-by-side.
+Record the current model in History, change the module model in Config Center,
+then run the same prompt again. History keeps both results for comparison.
 
 Module-by-module parameter reference → [docs/USAGE.md](docs/USAGE.md).
 

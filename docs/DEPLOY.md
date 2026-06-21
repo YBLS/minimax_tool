@@ -49,10 +49,30 @@ docker compose up -d --build
 # 5. Verify
 docker compose ps                  # app container healthy
 curl http://localhost:9060/api/health
-# → {"status":"ok","db":true,"version":"0.1.0"}
+# → {"status":"ok","db":true,"version":"0.2.0"}
 ```
 
-The SPA is at <http://localhost:9060>.
+The SPA is at <http://localhost:9060>. Compose binds it to `127.0.0.1`
+by default, so it is not reachable directly from another machine.
+
+## Built-in production authentication
+
+Set both variables before starting the stack. Browsers display their native
+login dialog; API clients send the same HTTP Basic credentials.
+
+```bash
+export APP_USERNAME=minimax-admin
+export APP_PASSWORD="$(openssl rand -base64 32)"   # save this in your password manager
+docker compose up -d --build
+```
+
+`/api/health` intentionally remains unauthenticated for container and load
+balancer health checks. Use TLS at the reverse proxy: Basic credentials must
+never travel over plaintext on an untrusted network.
+
+For a same-host reverse proxy, keep the localhost binding. To bind deliberately
+to another interface, set `BIND_ADDRESS`, and set `ALLOWED_ORIGINS` to a
+comma-separated list of exact HTTPS origins when cross-origin API access is needed.
 
 ## What's where
 
@@ -198,10 +218,13 @@ If a new release changes the *shape* of a seed config (e.g. adds a field to the 
 - [ ] **Set an explicit `MASTER_KEY` env var** in `docker-compose.yml` so the key is not generated into a host file. Generate with:
       `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`
 - [ ] Set a strong password in `config/database.yaml` (the file is gitignored; rotate the underlying Postgres user password periodically and update the YAML to match)
-- [ ] Put the app behind a reverse proxy (Caddy, nginx) with TLS + basic auth
+- [ ] Set `APP_USERNAME` and a random `APP_PASSWORD`
+- [ ] Put the app behind a reverse proxy (Caddy, nginx) with TLS
 - [ ] Mount the `.master_key`, the `config/database.yaml`, and the externally-hosted Postgres data dir onto a backup target
 - [ ] Set up log aggregation (the app logs to stdout, so any docker-log driver works)
-- [ ] Restrict the SPA's CORS allow-origin to your reverse-proxy's host (in `backend/app/main.py`)
+- [ ] Keep `BIND_ADDRESS=127.0.0.1`; only change it deliberately
+- [ ] Set `ALLOWED_ORIGINS` only when a separate frontend origin is required
+- [ ] Keep `ALLOW_PRIVATE_UPSTREAMS=false` and tune `MAX_DOWNLOAD_BYTES`
 
 ## Troubleshooting
 

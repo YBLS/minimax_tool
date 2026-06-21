@@ -8,7 +8,7 @@ This walks through every screen and every module, in the order a new user will e
 |--------|---------------|
 | **Studio** | Run generations, see results inline |
 | **Config Center** | Edit / add / delete module configs and API keys |
-| **History** | Audit every call, replay payloads, re-run from a row |
+| **History** | Audit media calls and inspect redacted request/response payloads |
 | **Secrets** | Store reusable secret values (e.g. a `WEBHOOK_SIGNING_KEY`) once, reference by name in templates |
 
 The left sidebar groups **Studio** as a parent with 4 children (Image / Voice / Music / Video) — the rest are flat.
