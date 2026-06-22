@@ -2,6 +2,8 @@
 
 > A compact web UI for MiniMax translation and media generation.
 
+[简体中文](README.zh-CN.md)
+
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python 3.13](https://img.shields.io/badge/python-3.13-blue.svg)](https://www.python.org/downloads/)
 [![React 18](https://img.shields.io/badge/react-18-61dafb.svg)](https://react.dev)
@@ -42,6 +44,31 @@ curl http://localhost:9060/api/health
 <http://localhost:9060>
 
 Add a MiniMax API key under **Config Center → API Keys**, then use Translation or any Studio module.
+
+### Bundled PostgreSQL 18
+
+Use the self-contained stack when an external database is not available:
+
+```bash
+cp config/database.pg18.yaml.example config/database.pg18.yaml
+touch .master_key && chmod 600 .master_key
+export POSTGRES_PASSWORD='replace-with-a-strong-password'
+docker compose -f docker-compose.pg18.yml up -d --build
+```
+
+PostgreSQL uses the `minimax_pg18_data` named volume by default. Customize persistence with environment variables:
+
+```bash
+# Custom named volumes
+PG_VOLUME_NAME=my_pg_data UPLOAD_VOLUME_NAME=my_uploads \
+  docker compose -f docker-compose.pg18.yml up -d
+
+# Host-directory bind mounts
+PG_DATA_PATH=/srv/minimax/postgres UPLOAD_DATA_PATH=/srv/minimax/uploads \
+  docker compose -f docker-compose.pg18.yml up -d
+```
+
+Keep `POSTGRES_PASSWORD` available for every Compose command. PostgreSQL 18 data is mounted at `/var/lib/postgresql` as required by the official image.
 
 ## Video modes
 

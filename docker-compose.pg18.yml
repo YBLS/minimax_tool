@@ -1,0 +1,71 @@
+# MiniMax Tool + PostgreSQL 18 (self-contained deployment)
+#
+# Required:
+#   cp config/database.pg18.yaml.example config/database.pg18.yaml
+#   touch .master_key && chmod 600 .master_key
+#   export POSTGRES_PASSWORD='replace-with-a-strong-password'
+#   docker compose -f docker-compose.pg18.yml up -d --build
+
+name: minimax-pg18
+
+services:
+  postgres:
+    image: postgres:18
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: "${POSTGRES_USER:-minimax}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}"
+      POSTGRES_DB: "${POSTGRES_DB:-minimax_tool}"
+    volumes:
+      # Default: Docker named volume `minimax_pg18_data`.
+      # Bind mount: PG_DATA_PATH=/srv/minimax/postgres
+      - "${PG_DATA_PATH:-minimax_pg18_data}:/var/lib/postgresql"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-minimax} -d ${POSTGRES_DB:-minimax_tool}"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      HOST: 0.0.0.0
+      PORT: 9060
+      DEBUG: "false"
+      POSTGRES_USER: "${POSTGRES_USER:-minimax}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}"
+      POSTGRES_DB: "${POSTGRES_DB:-minimax_tool}"
+      REQUEST_TIMEOUT: "180"
+      MAX_DOWNLOAD_BYTES: "104857600"
+      ALLOW_PRIVATE_UPSTREAMS: "false"
+      APP_USERNAME: "${APP_USERNAME:-}"
+      APP_PASSWORD: "${APP_PASSWORD:-}"
+      ALLOWED_ORIGINS: "${ALLOWED_ORIGINS:-}"
+      UPLOAD_DIR: /app/uploads
+      STATIC_DIR: /app/static
+    ports:
+      - "${BIND_ADDRESS:-127.0.0.1}:${PORT:-9060}:9060"
+    volumes:
+      # Default named volume; set UPLOAD_DATA_PATH to use a host directory.
+      - "${UPLOAD_DATA_PATH:-minimax_uploads}:/app/uploads"
+      - ./config/database.pg18.yaml:/app/config/database.yaml:ro
+      - ./.master_key:/app/.master_key
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:9060/api/health', timeout=2).status == 200 else 1)"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+volumes:
+  minimax_pg18_data:
+    name: "${PG_VOLUME_NAME:-minimax_pg18_data}"
+  minimax_uploads:
+    name: "${UPLOAD_VOLUME_NAME:-minimax_uploads}"

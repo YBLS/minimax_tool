@@ -1,0 +1,13 @@
+# Database configuration for docker-compose.pg18.yml.
+# Copy to database.pg18.yaml; values are supplied by Compose environment.
+database:
+  host: postgres
+  port: 5432
+  user: "${POSTGRES_USER:-minimax}"
+  password: "${POSTGRES_PASSWORD}"
+  name: "${POSTGRES_DB:-minimax_tool}"
+  ssl: false
+  pool:
+    min_size: 1
+    max_size: 10
+    command_timeout: 60

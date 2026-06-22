@@ -29,6 +29,7 @@ frontend/node_modules/
 .env.*
 config/database.yaml
 config/database.local.yaml
+config/database.pg18.yaml
 uploads/
 
 # --- Build outputs (regenerated during image build) ---

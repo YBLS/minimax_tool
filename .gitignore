@@ -52,7 +52,9 @@ backend/scripts/__pycache__/
 # --- Database config (real values only — example file is tracked) ---
 config/database.yaml
 config/database.local.yaml
+config/database.pg18.yaml
 !config/database.yaml.example
+!config/database.pg18.yaml.example
 !config/.gitkeep
 
 # --- IDE / OS ---

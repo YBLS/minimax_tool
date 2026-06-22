@@ -55,6 +55,23 @@ curl http://localhost:9060/api/health
 The SPA is at <http://localhost:9060>. Compose binds it to `127.0.0.1`
 by default, so it is not reachable directly from another machine.
 
+## Self-contained PostgreSQL 18 stack
+
+For a bundled database, use `docker-compose.pg18.yml` instead of the default
+external-database stack:
+
+```bash
+cp config/database.pg18.yaml.example config/database.pg18.yaml
+touch .master_key && chmod 600 .master_key
+export POSTGRES_PASSWORD='replace-with-a-strong-password'
+docker compose -f docker-compose.pg18.yml up -d --build
+```
+
+The default named volumes are `minimax_pg18_data` and `minimax_uploads`.
+Override their Docker names with `PG_VOLUME_NAME` / `UPLOAD_VOLUME_NAME`, or
+set `PG_DATA_PATH` / `UPLOAD_DATA_PATH` to absolute host paths for bind mounts.
+PostgreSQL 18 uses `/var/lib/postgresql` as its persistent mount point.
+
 ## Built-in production authentication
 
 Set both variables before starting the stack. Browsers display their native
